@@ -454,7 +454,7 @@ function CodebaseMockup() {
             <polyline points="16 18 22 12 16 6" />
             <polyline points="8 6 2 12 8 18" />
           </svg>
-          <span className="text-xs font-medium">acme/web-app</span>
+          <span className="text-xs font-medium">streamline/dashboard</span>
           <span className={cn(
             "text-[10px] font-medium px-1.5 py-0.5 ml-auto",
             isDone ? "bg-bg-inverse text-text-inverse" : "bg-bg-tertiary text-text-secondary"
