@@ -454,8 +454,8 @@ export function Hero() {
             {...(anim || fadeUp(0.15))}
           >
             The AI-native IDE for product managers. Connect customer feedback
-            and GitHub, then ask what's worth building, what's feasible, and
-            what needs to change.
+            and GitHub, then write specs that know what's worth building,
+            what's feasible, and what needs to change.
           </motion.p>
 
           <motion.div
