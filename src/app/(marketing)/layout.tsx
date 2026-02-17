@@ -3,11 +3,11 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 
 export const metadata: Metadata = {
-  title: "Koso — AI-Native IDE for Product Managers",
+  title: "AI-Native IDE for Product Managers",
   description:
     "Customer feedback and codebase, in one conversation. The AI-native IDE for product managers.",
   openGraph: {
-    title: "Koso — AI-Native IDE for Product Managers",
+    title: "AI-Native IDE for Product Managers",
     description:
       "Customer feedback and codebase, in one conversation.",
     type: "website",
@@ -15,7 +15,7 @@ export const metadata: Metadata = {
   },
   twitter: {
     card: "summary_large_image",
-    title: "Koso — AI-Native IDE for Product Managers",
+    title: "AI-Native IDE for Product Managers",
     description:
       "Customer feedback and codebase, in one conversation.",
   },
