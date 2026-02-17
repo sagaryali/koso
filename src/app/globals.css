@@ -1,26 +1,480 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
-
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
+  /* Colors — Background */
+  --color-bg-primary: #FFFFFF;
+  --color-bg-secondary: #FAFAFA;
+  --color-bg-tertiary: #F5F5F5;
+  --color-bg-inverse: #000000;
+  --color-bg-hover: #F0F0F0;
+  --color-bg-active: #E8E8E8;
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+  /* Colors — Text */
+  --color-text-primary: #000000;
+  --color-text-secondary: #555555;
+  --color-text-tertiary: #999999;
+  --color-text-inverse: #FFFFFF;
+
+  /* Colors — Border */
+  --color-border-default: #E5E5E5;
+  --color-border-strong: #000000;
+  --color-border-subtle: #F0F0F0;
+
+  /* Colors — State */
+  --color-state-error: #D00000;
+  --color-state-success: #000000;
+
+  /* Typography — Font Family */
+  --font-sans: "DM Sans", sans-serif;
+
+  /* Typography — Font Size */
+  --text-xs: 12px;
+  --text-xs--line-height: 16px;
+  --text-sm: 13px;
+  --text-sm--line-height: 18px;
+  --text-base: 15px;
+  --text-base--line-height: 24px;
+  --text-lg: 17px;
+  --text-lg--line-height: 26px;
+  --text-xl: 22px;
+  --text-xl--line-height: 30px;
+  --text-2xl: 28px;
+  --text-2xl--line-height: 36px;
+  --text-3xl: 36px;
+  --text-3xl--line-height: 44px;
+
+  /* Spacing */
+  --spacing: 4px;
+
+  /* Border Radius */
+  --radius-none: 0px;
+  --radius-sm: 2px;
+
+  /* Shadows */
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.04);
+  --shadow-modal: 0 4px 24px rgba(0, 0, 0, 0.08);
+
+  /* Layout */
+  --width-editor: 720px;
+  --width-sidebar: 240px;
+  --width-sidebar-collapsed: 56px;
+  --width-context-panel: 320px;
+
+  /* Letter Spacing */
+  --tracking-tight: -0.02em;
+  --tracking-normal: 0em;
+  --tracking-caps: 0.05em;
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background: var(--color-bg-primary);
+  color: var(--color-text-primary);
+  font-family: var(--font-sans);
+  font-size: var(--text-base);
+  line-height: var(--text-base--line-height);
+  font-weight: 400;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Focus override — black border, no blue ring */
+*:focus-visible {
+  outline: 1px solid var(--color-border-strong);
+  outline-offset: -1px;
+}
+
+/* Remove default focus ring */
+*:focus {
+  outline: none;
+}
+
+/* Selection */
+::selection {
+  background: var(--color-bg-inverse);
+  color: var(--color-text-inverse);
+}
+
+/* ───────────────────────────────────────────────
+   Tiptap Editor Styles
+   ─────────────────────────────────────────────── */
+
+.tiptap-editor {
+  font-family: "DM Sans", sans-serif;
+  font-size: 15px;
+  line-height: 26px;
+  font-weight: 400;
+  color: #000000;
+}
+
+.tiptap-editor:focus {
+  outline: none;
+}
+
+/* Editor selection override — black on light gray per spec */
+.tiptap-editor ::selection {
+  background: #E8E8E8;
+  color: #000000;
+}
+
+/* ── Headings ── */
+
+.tiptap-editor h1 {
+  font-size: 28px;
+  line-height: 36px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  margin-top: 32px;
+  margin-bottom: 16px;
+}
+
+.tiptap-editor h1:first-child {
+  margin-top: 0;
+}
+
+.tiptap-editor h2 {
+  font-size: 22px;
+  line-height: 30px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  margin-top: 28px;
+  margin-bottom: 12px;
+}
+
+.tiptap-editor h3 {
+  font-size: 17px;
+  line-height: 26px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  margin-top: 24px;
+  margin-bottom: 8px;
+}
+
+/* ── Paragraphs ── */
+
+.tiptap-editor p {
+  margin-bottom: 20px;
+  line-height: 26px;
+}
+
+.tiptap-editor p:last-child {
+  margin-bottom: 0;
+}
+
+/* ── Code blocks ── */
+
+.tiptap-editor pre {
+  background: #FAFAFA;
+  border: 1px solid #E5E5E5;
+  padding: 16px;
+  margin-bottom: 20px;
+  overflow-x: auto;
+}
+
+.tiptap-editor pre code {
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 13px;
+  line-height: 20px;
+  color: #000000;
+  background: none;
+  padding: 0;
+}
+
+/* ── Inline code ── */
+
+.tiptap-editor code {
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 13px;
+  background: #F5F5F5;
+  padding: 2px 4px;
+}
+
+/* ── Blockquotes ── */
+
+.tiptap-editor blockquote {
+  border-left: 2px solid #000000;
+  background: #FAFAFA;
+  padding: 12px 16px;
+  margin-bottom: 20px;
+  font-style: italic;
+}
+
+.tiptap-editor blockquote p {
+  margin-bottom: 0;
+}
+
+/* ── Lists ── */
+
+.tiptap-editor ul {
+  list-style: none;
+  padding-left: 24px;
+  margin-bottom: 20px;
+}
+
+.tiptap-editor ul li {
+  position: relative;
+  padding-left: 0;
+  margin-bottom: 4px;
+}
+
+/* Custom bullet: small black square */
+.tiptap-editor ul > li::before {
+  content: "";
+  position: absolute;
+  left: -16px;
+  top: 10px;
+  width: 5px;
+  height: 5px;
+  background: #000000;
+}
+
+.tiptap-editor ol {
+  list-style: decimal;
+  padding-left: 24px;
+  margin-bottom: 20px;
+}
+
+.tiptap-editor ol li {
+  margin-bottom: 4px;
+  padding-left: 4px;
+}
+
+.tiptap-editor ol li::marker {
+  font-weight: 500;
+}
+
+/* Nested lists */
+.tiptap-editor ul ul,
+.tiptap-editor ol ol,
+.tiptap-editor ul ol,
+.tiptap-editor ol ul {
+  margin-bottom: 0;
+  margin-top: 4px;
+}
+
+/* ── Task lists ── */
+
+.tiptap-editor ul[data-type="taskList"] {
+  list-style: none;
+  padding-left: 0;
+}
+
+.tiptap-editor ul[data-type="taskList"] li {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding-left: 0;
+}
+
+/* Remove custom bullet on task list items */
+.tiptap-editor ul[data-type="taskList"] > li::before {
+  display: none;
+}
+
+.tiptap-editor ul[data-type="taskList"] li label {
+  display: flex;
+  align-items: center;
+  margin-top: 3px;
+}
+
+/* Custom checkbox: black border square */
+.tiptap-editor ul[data-type="taskList"] li label input[type="checkbox"] {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 16px;
+  height: 16px;
+  border: 1px solid #000000;
+  background: #FFFFFF;
+  cursor: pointer;
+  flex-shrink: 0;
+  position: relative;
+}
+
+/* Checked state: black filled square */
+.tiptap-editor ul[data-type="taskList"] li label input[type="checkbox"]:checked {
+  background: #000000;
+}
+
+.tiptap-editor ul[data-type="taskList"] li label input[type="checkbox"]:checked::after {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 5px;
+  width: 4px;
+  height: 8px;
+  border: solid #FFFFFF;
+  border-width: 0 1.5px 1.5px 0;
+  transform: rotate(45deg);
+}
+
+.tiptap-editor ul[data-type="taskList"] li > div {
+  flex: 1;
+}
+
+/* Checked task text */
+.tiptap-editor ul[data-type="taskList"] li[data-checked="true"] > div {
+  text-decoration: line-through;
+  color: #999999;
+}
+
+/* ── Horizontal rule ── */
+
+.tiptap-editor hr {
+  border: none;
+  border-top: 1px solid #E5E5E5;
+  margin: 24px 0;
+}
+
+/* ── Links ── */
+
+.tiptap-editor a {
+  color: #000000;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.tiptap-editor a:hover {
+  text-decoration-thickness: 2px;
+}
+
+/* ── Placeholder ── */
+
+.tiptap-editor p.is-editor-empty:first-child::before {
+  content: attr(data-placeholder);
+  float: left;
+  color: #999999;
+  pointer-events: none;
+  height: 0;
+}
+
+/* ── Strong / Italic ── */
+
+.tiptap-editor strong {
+  font-weight: 700;
+}
+
+.tiptap-editor em {
+  font-style: italic;
+}
+
+/* ───────────────────────────────────────────────
+   Toast slide-in animation
+   ─────────────────────────────────────────────── */
+
+@keyframes toast-slide-in {
+  from {
+    opacity: 0;
+    transform: translateX(100%);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+.toast-slide-in {
+  animation: toast-slide-in 200ms ease-out;
+}
+
+/* ───────────────────────────────────────────────
+   Page transitions
+   ─────────────────────────────────────────────── */
+
+@keyframes page-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.page-transition {
+  animation: page-fade-in 150ms ease-out;
+}
+
+/* ───────────────────────────────────────────────
+   Typewriter cursor
+   ─────────────────────────────────────────────── */
+
+@keyframes cursor-blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+
+.typewriter-cursor {
+  display: inline-block;
+  width: 2px;
+  height: 18px;
+  background: var(--color-text-primary);
+  animation: cursor-blink 800ms ease-in-out infinite;
+  vertical-align: text-bottom;
+}
+
+/* ───────────────────────────────────────────────
+   Staggered fade-in for context panel results
+   ─────────────────────────────────────────────── */
+
+@keyframes stagger-fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.stagger-item {
+  opacity: 0;
+  animation: stagger-fade-in 150ms ease-out forwards;
+}
+
+/* ───────────────────────────────────────────────
+   AI pulsing indicator
+   ─────────────────────────────────────────────── */
+
+@keyframes ai-pulse {
+  0%, 100% { opacity: 0.4; }
+  50% { opacity: 1; }
+}
+
+.ai-thinking {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+}
+
+.ai-thinking-dot {
+  width: 4px;
+  height: 4px;
+  background: var(--color-text-tertiary);
+  animation: ai-pulse 1.2s ease-in-out infinite;
+}
+
+.ai-thinking-dot:nth-child(2) {
+  animation-delay: 0.2s;
+}
+
+.ai-thinking-dot:nth-child(3) {
+  animation-delay: 0.4s;
+}
+
+/* ───────────────────────────────────────────────
+   Responsive — graceful degradation at 1024px+
+   ─────────────────────────────────────────────── */
+
+@media (max-width: 1024px) {
+  /* Auto-collapse sidebar on narrow screens */
+  .sidebar-responsive {
+    width: 56px !important;
+  }
+
+  /* Stack editor + context panel vertically */
+  .editor-layout-responsive {
+    flex-direction: column;
+  }
+
+  .editor-layout-responsive .context-panel-responsive {
+    width: 100% !important;
+    max-width: 100% !important;
+    border-left: none !important;
+    border-top: 1px solid var(--color-border-default);
+  }
 }
