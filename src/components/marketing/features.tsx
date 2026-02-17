@@ -140,7 +140,7 @@ const fade = { duration: 0.25, ease: "easeOut" as const };
 // Story: Semantic search → ranked results with similarity → link to spec
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-const EVIDENCE_DURATIONS = [1500, 1000, 300, 2000, 1200, 1200, 300] as const;
+const EVIDENCE_DURATIONS = [800, 1000, 300, 2000, 1200, 600, 300] as const;
 
 const ALL_EVIDENCE = [
   { type: "Feedback", text: "\"Onboarding is confusing — I didn't know where to click\"" },
@@ -262,13 +262,13 @@ function EvidencePoolMockup() {
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 const EDITOR_DURATIONS = [
-  1200, // 0: static editor
+  600,  // 0: static editor
   300,  // 1: cmd+k appears
   1000, // 2: typing query
   350,  // 3: command selected
   250, 250, 250, 250, 200, 200, // 4–9: streaming lines appear
   1200, // 10: insert button + hold
-  1200, // 11: hold
+  400,  // 11: hold
   400,  // 12: reset
 ] as const;
 
@@ -413,7 +413,7 @@ function EditorMockup() {
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 const CODEBASE_DURATIONS = [
-  900,  // 0: connected header only
+  500,  // 0: connected header only
   350,  // 1: file 1
   350,  // 2: file 2
   350,  // 3: file 3
@@ -421,7 +421,7 @@ const CODEBASE_DURATIONS = [
   500,  // 5: analyzing...
   500,  // 6: architecture summary
   500,  // 7: feasibility
-  1800, // 8: hold
+  1000, // 8: hold
   300,  // 9: reset
 ] as const;
 
@@ -570,13 +570,13 @@ function CodebaseMockup() {
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 const MARKET_DURATIONS = [
-  1200, // 0: static editor, empty panel
+  600,  // 0: static editor, empty panel
   1200, // 1: typing in editor
   500,  // 2: loading skeleton
   400,  // 3: signal 1
   400,  // 4: signal 2
   400,  // 5: signal 3
-  1800, // 6: hold
+  1000, // 6: hold
   400,  // 7: reset
 ] as const;
 
