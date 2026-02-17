@@ -13,9 +13,9 @@ interface ContentChunk {
   index: number;
 }
 
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
+function getOpenAIClient() {
+  return new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+}
 
 // --- Public API ---
 
@@ -23,7 +23,7 @@ export async function generateEmbedding(text: string): Promise<number[]> {
   const cleaned = text.replace(/\n/g, " ").trim();
   if (!cleaned) throw new Error("Cannot embed empty text");
 
-  const response = await openai.embeddings.create({
+  const response = await getOpenAIClient().embeddings.create({
     model: "text-embedding-3-small",
     input: cleaned,
   });
