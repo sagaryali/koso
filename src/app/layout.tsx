@@ -2,6 +2,8 @@ import type { Metadata } from "next";
 import { ToastContainer } from "@/components/ui/toast";
 import "./globals.css";
 
+export const dynamic = "force-dynamic";
+
 export const metadata: Metadata = {
   title: {
     default: "Koso",
