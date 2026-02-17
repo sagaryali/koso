@@ -57,7 +57,7 @@ export default function SignupPage() {
     <div className="flex min-h-screen items-center justify-center">
       <div className="w-full max-w-[360px] px-6">
         <div className="mb-10">
-          <KosoWordmark size={28} />
+          <Link href="/"><KosoWordmark size={28} /></Link>
           <p className="mt-3 text-sm text-text-tertiary">
             The IDE for product managers
           </p>
