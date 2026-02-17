@@ -140,7 +140,7 @@ const fade = { duration: 0.25, ease: "easeOut" as const };
 // Story: Semantic search → ranked results with similarity → link to spec
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-const EVIDENCE_DURATIONS = [2500, 1500, 500, 3000, 2000, 2000, 500] as const;
+const EVIDENCE_DURATIONS = [1500, 1000, 300, 2000, 1200, 1200, 300] as const;
 
 const ALL_EVIDENCE = [
   { type: "Feedback", text: "\"Onboarding is confusing — I didn't know where to click\"" },
@@ -159,7 +159,7 @@ function EvidencePoolMockup() {
   // 0: idle  1: typing  2: loading  3: results  4: linked  5: hold  6: reset
   const phase = usePhases(EVIDENCE_DURATIONS);
   const reduced = useReducedMotion();
-  const typed = useTypewriter("onboarding drop-off", phase === 1, 80);
+  const typed = useTypewriter("onboarding drop-off", phase === 1, 50);
 
   const hasSearch = reduced || (phase >= 1 && phase <= 5);
   const showResults = reduced || (phase >= 3 && phase <= 5);
@@ -262,14 +262,14 @@ function EvidencePoolMockup() {
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 const EDITOR_DURATIONS = [
-  2000, // 0: static editor
-  400,  // 1: cmd+k appears
-  1600, // 2: typing query
-  500,  // 3: command selected
-  400, 400, 400, 400, 350, 350, // 4–9: streaming lines appear
-  2000, // 10: insert button + hold
-  2000, // 11: hold
-  600,  // 12: reset
+  1200, // 0: static editor
+  300,  // 1: cmd+k appears
+  1000, // 2: typing query
+  350,  // 3: command selected
+  250, 250, 250, 250, 200, 200, // 4–9: streaming lines appear
+  1200, // 10: insert button + hold
+  1200, // 11: hold
+  400,  // 12: reset
 ] as const;
 
 const STREAMING_LINES = [
@@ -284,7 +284,7 @@ const STREAMING_LINES = [
 function EditorMockup() {
   const phase = usePhases(EDITOR_DURATIONS);
   const reduced = useReducedMotion();
-  const queryTyped = useTypewriter("generate user stories", phase === 2, 55);
+  const queryTyped = useTypewriter("generate user stories", phase === 2, 35);
 
   const showOverlay = !reduced && phase >= 1 && phase <= 3;
   const showStreaming = reduced || (phase >= 4 && phase <= 11);
@@ -413,16 +413,16 @@ function EditorMockup() {
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 const CODEBASE_DURATIONS = [
-  1500, // 0: connected header only
-  600,  // 1: file 1
-  600,  // 2: file 2
-  600,  // 3: file 3
-  600,  // 4: file 4
-  800,  // 5: analyzing...
-  800,  // 6: architecture summary
-  800,  // 7: feasibility
-  3000, // 8: hold
-  500,  // 9: reset
+  900,  // 0: connected header only
+  350,  // 1: file 1
+  350,  // 2: file 2
+  350,  // 3: file 3
+  350,  // 4: file 4
+  500,  // 5: analyzing...
+  500,  // 6: architecture summary
+  500,  // 7: feasibility
+  1800, // 8: hold
+  300,  // 9: reset
 ] as const;
 
 const SCANNED_FILES = [
@@ -570,14 +570,14 @@ function CodebaseMockup() {
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 const MARKET_DURATIONS = [
-  2000, // 0: static editor, empty panel
-  2000, // 1: typing in editor
-  800,  // 2: loading skeleton
-  700,  // 3: signal 1
-  700,  // 4: signal 2
-  700,  // 5: signal 3
-  3000, // 6: hold
-  600,  // 7: reset
+  1200, // 0: static editor, empty panel
+  1200, // 1: typing in editor
+  500,  // 2: loading skeleton
+  400,  // 3: signal 1
+  400,  // 4: signal 2
+  400,  // 5: signal 3
+  1800, // 6: hold
+  400,  // 7: reset
 ] as const;
 
 const MARKET_SIGNALS = [
@@ -589,7 +589,7 @@ const MARKET_SIGNALS = [
 function MarketMockup() {
   const phase = usePhases(MARKET_DURATIONS);
   const reduced = useReducedMotion();
-  const typedText = useTypewriter("SAML 2.0 SSO for enterprise customers", phase === 1, 65);
+  const typedText = useTypewriter("SAML 2.0 SSO for enterprise customers", phase === 1, 40);
 
   const showTyped = reduced || phase >= 1;
   const isLoading = !reduced && phase === 2;

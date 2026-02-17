@@ -328,7 +328,7 @@ export function Workflow() {
             {/* Right: Browser mockup */}
             <div className="md:w-[60%]">
               <BrowserFrame url="app.koso.ai/investigate">
-                <div className="min-h-[300px] md:min-h-[380px] max-h-[420px] overflow-hidden">
+                <div className="h-[300px] md:h-[420px] overflow-hidden">
                   <AnimatePresence mode="wait">
                     <motion.div
                       key={activeStep}
