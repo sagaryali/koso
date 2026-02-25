@@ -9,7 +9,7 @@ import type { CodebaseModule } from "@/types";
 
 export default function CodebasePage() {
   const router = useRouter();
-  const { connection, loading } = useCodebaseStatus(true);
+  const { connection, connections, loading } = useCodebaseStatus(true);
   const [modules, setModules] = useState<CodebaseModule[]>([]);
   const [search, setSearch] = useState("");
   const [filterType, setFilterType] = useState<string | null>(null);
@@ -19,8 +19,10 @@ export default function CodebasePage() {
     document.title = "Koso — Codebase";
   }, []);
 
+  const anyReady = connections.some((c) => c.status === "ready");
+
   useEffect(() => {
-    if (!connection || connection.status !== "ready") return;
+    if (!anyReady) return;
 
     async function fetchModules() {
       setModulesLoading(true);
@@ -37,7 +39,7 @@ export default function CodebasePage() {
     }
 
     fetchModules();
-  }, [connection?.status]);
+  }, [anyReady]);
 
   if (loading) {
     return (
@@ -53,7 +55,7 @@ export default function CodebasePage() {
     );
   }
 
-  if (!connection) {
+  if (connections.length === 0) {
     return (
       <div className="px-12 py-10 page-transition">
         <h1 className="text-2xl font-bold tracking-tight">Codebase</h1>
@@ -75,18 +77,24 @@ export default function CodebasePage() {
     );
   }
 
-  if (connection.status === "syncing" || connection.status === "pending") {
+  const syncing = connections.filter(
+    (c) => c.status === "syncing" || c.status === "pending"
+  );
+
+  if (!anyReady && syncing.length > 0) {
     return (
       <div className="px-12 py-10">
         <h1 className="text-2xl font-bold tracking-tight">Codebase</h1>
-        <div className="mt-6 flex items-center gap-2">
-          <div className="h-2 w-2 animate-pulse bg-text-primary" />
-          <span className="text-sm text-text-secondary">
-            Indexing {connection.repo_name}...{" "}
-            {connection.module_count > 0 &&
-              `${connection.module_count}/${connection.file_count} files`}
-          </span>
-        </div>
+        {syncing.map((c) => (
+          <div key={c.id} className="mt-6 flex items-center gap-2">
+            <div className="h-2 w-2 animate-pulse bg-text-primary" />
+            <span className="text-sm text-text-secondary">
+              Indexing {c.repo_name}...{" "}
+              {c.module_count > 0 &&
+                `${c.module_count}/${c.file_count} files`}
+            </span>
+          </div>
+        ))}
       </div>
     );
   }
@@ -113,7 +121,7 @@ export default function CodebasePage() {
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Codebase</h1>
           <p className="mt-1 text-sm text-text-tertiary">
-            {connection.repo_name} &middot; {modules.length} modules
+            {connections.filter((c) => c.status === "ready").map((c) => c.repo_name).join(", ")} &middot; {modules.length} modules
           </p>
         </div>
       </div>

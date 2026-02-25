@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { getAuthenticatedWorkspace } from "@/lib/api/get-workspace";
 
 export async function GET() {
@@ -6,29 +7,33 @@ export async function GET() {
   if ("error" in result) {
     return NextResponse.json({ error: result.error }, { status: result.status });
   }
-  const { workspace, supabase } = result;
+  const { workspace } = result;
 
-  // Get connection and modules
-  const { data: connection } = await supabase
+  const admin = createAdminClient();
+
+  // Get all connections for workspace
+  const { data: connections } = await admin
     .from("codebase_connections")
     .select("*")
-    .eq("workspace_id", workspace.id)
-    .single();
+    .eq("workspace_id", workspace.id);
 
-  if (!connection) {
+  if (!connections || connections.length === 0) {
     return NextResponse.json({ connection: null, modules: [] });
   }
 
-  const { data: modules } = await supabase
+  // Fetch modules across all connections
+  const connectionIds = connections.map((c) => c.id);
+  const { data: modules } = await admin
     .from("codebase_modules")
     .select(
-      "id, file_path, module_name, module_type, language, summary, exports, dependencies"
+      "id, file_path, module_name, module_type, language, summary, exports, dependencies, connection_id"
     )
-    .eq("connection_id", connection.id)
+    .in("connection_id", connectionIds)
     .order("file_path");
 
   return NextResponse.json({
-    connection,
+    connection: connections[0],
+    connections,
     modules: modules || [],
   });
 }
