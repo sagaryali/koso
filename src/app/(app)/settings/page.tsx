@@ -190,10 +190,13 @@ export default function SettingsPage() {
 
       if (!res.ok) {
         const data = await res.json().catch(() => ({ error: "Unknown error" }));
-        toast({ message: `Failed to connect: ${data.error || "Unknown error"}. Retry?` });
-        return;
+        // 409 = already connected — still refresh to show existing connections
+        if (res.status !== 409) {
+          toast({ message: `Failed to connect: ${data.error || "Unknown error"}. Retry?` });
+        }
       }
 
+      // Always refresh status to show current connections
       refreshStatus();
     } catch {
       toast({ message: "Failed to connect repository. Check your connection and try again." });
