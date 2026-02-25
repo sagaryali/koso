@@ -31,6 +31,7 @@ import { useCodebaseStatus } from "@/hooks/use-codebase-status";
 import { useFeasibility } from "@/hooks/use-feasibility";
 import { useMarketSignals } from "@/hooks/use-market-signals";
 import { useSeededContext } from "@/hooks/use-seeded-context";
+import { useEvidenceNudges } from "@/hooks/use-evidence-nudges";
 import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
 import { useTourTrigger } from "@/hooks/use-tour-trigger";
@@ -133,17 +134,25 @@ export default function EditorPage() {
     workspace?.product_description ?? null
   );
 
+  // Evidence nudges (clusters)
+  const {
+    nudges: evidenceNudges,
+    loading: evidenceNudgesLoading,
+    triggerNudges,
+  } = useEvidenceNudges(artifact?.workspace_id ?? "");
+
   const handleTextChange = useCallback(
-    (sectionText: string) => {
+    (sectionText: string, sectionName: string | null) => {
       const fullText = editorRef.current?.getText() ?? "";
       setIsEmpty(fullText.length < 50);
       triggerSearch(sectionText);
       triggerMarketSearch(sectionText);
+      triggerNudges(sectionText, sectionName);
       if (hasCodebase && artifact) {
         triggerAssessment(sectionText, title || artifact.title, artifact.type);
       }
     },
-    [triggerSearch, triggerMarketSearch, triggerAssessment, hasCodebase, artifact, title]
+    [triggerSearch, triggerMarketSearch, triggerNudges, triggerAssessment, hasCodebase, artifact, title]
   );
 
   const handleEditorReady = useCallback(
@@ -179,6 +188,13 @@ export default function EditorPage() {
           .eq("id", artifactData.workspace_id)
           .single();
         if (ws) setWorkspace(ws);
+
+        // Fire-and-forget: trigger cluster computation
+        fetch("/api/clusters/compute", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ workspaceId: artifactData.workspace_id }),
+        }).catch(() => {});
       }
       setLoading(false);
     }
@@ -522,6 +538,7 @@ export default function EditorPage() {
               onTextChange={handleTextChange}
               onReady={handleEditorReady}
               onEditorInstance={handleEditorInstance}
+              inlineNudges={evidenceNudges}
             />
           </div>
 
@@ -559,6 +576,8 @@ export default function EditorPage() {
             seededContext={seededContext}
             codebaseStatus={codebaseConnection?.status ?? null}
             productName={workspace?.name ?? null}
+            evidenceNudges={evidenceNudges}
+            evidenceNudgesLoading={evidenceNudgesLoading}
           />
 
           {/* Feasibility section — below code context */}

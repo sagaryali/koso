@@ -7,6 +7,7 @@ import { Badge, Dialog, Skeleton, Icon } from "@/components/ui";
 import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
 import type { ContextSearchResult, MarketSearchResult, Evidence } from "@/types";
+import type { EvidenceNudge } from "@/hooks/use-evidence-nudges";
 import type { SeededSpec, SeededCodeModule, SeededContextData } from "@/hooks/use-seeded-context";
 
 interface ContextPanelProps {
@@ -25,6 +26,8 @@ interface ContextPanelProps {
   seededContext: SeededContextData;
   codebaseStatus: string | null;
   productName: string | null;
+  evidenceNudges?: EvidenceNudge[];
+  evidenceNudgesLoading?: boolean;
 }
 
 function SectionLabel({ children }: { children: React.ReactNode }) {
@@ -404,6 +407,35 @@ function SeededCodeCard({ module }: { module: SeededCodeModule }) {
   );
 }
 
+// --- Evidence Nudge Card (for patterns section) ---
+
+function EvidenceNudgeCard({ nudge }: { nudge: EvidenceNudge }) {
+  const maxCount = 100; // Normalize bar against a reasonable max
+  const barWidth = Math.min((nudge.evidenceCount / maxCount) * 100, 100);
+
+  return (
+    <div className="space-y-1.5">
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-[13px] font-medium text-text-primary">
+          {nudge.label}
+        </span>
+        <span className="shrink-0 text-[11px] font-medium text-text-tertiary">
+          {nudge.evidenceCount} {nudge.evidenceCount === 1 ? "signal" : "signals"}
+        </span>
+      </div>
+      <p className="line-clamp-1 text-xs text-text-secondary">
+        {nudge.summary}
+      </p>
+      <div className="h-1 w-full bg-border-default">
+        <div
+          className="h-full bg-text-tertiary"
+          style={{ width: `${barWidth}%` }}
+        />
+      </div>
+    </div>
+  );
+}
+
 // --- Main Component ---
 
 export function ContextPanel({
@@ -422,6 +454,8 @@ export function ContextPanel({
   seededContext,
   codebaseStatus,
   productName,
+  evidenceNudges,
+  evidenceNudgesLoading,
 }: ContextPanelProps) {
   // Seeded view for empty specs
   if (isEmpty) {
@@ -598,6 +632,27 @@ export function ContextPanel({
           )}
         </div>
       </section>
+
+      {/* Evidence Patterns */}
+      {evidenceNudges && evidenceNudges.length > 0 && (
+        <section>
+          <SectionLabel>Evidence Patterns</SectionLabel>
+          <SectionDivider />
+          <div className="mt-3 space-y-3">
+            {evidenceNudgesLoading ? (
+              <Skeleton variant="list" lines={2} />
+            ) : (
+              <StaggeredList>
+                {evidenceNudges.map((nudge, i) => (
+                  <StaggerItem key={nudge.id} index={i}>
+                    <EvidenceNudgeCard nudge={nudge} />
+                  </StaggerItem>
+                ))}
+              </StaggeredList>
+            )}
+          </div>
+        </section>
+      )}
 
       {/* Code Context */}
       <section>

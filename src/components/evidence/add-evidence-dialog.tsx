@@ -154,6 +154,13 @@ export function AddEvidenceDialog({
       console.log("[embeddings] Background indexing failed:", err)
     );
 
+    // Fire-and-forget: trigger cluster recomputation
+    fetch("/api/clusters/compute", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ workspaceId }),
+    }).catch(() => {});
+
     // Check for similar artifacts
     checkSimilarArtifacts(data.id, content.trim());
 
@@ -290,6 +297,13 @@ export function AddEvidenceDialog({
         }).catch(() => {});
       }
     }
+
+    // Fire-and-forget: trigger cluster recomputation
+    fetch("/api/clusters/compute", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ workspaceId }),
+    }).catch(() => {});
 
     toast({
       message: `Added ${bulkItems.length} items to evidence pool`,

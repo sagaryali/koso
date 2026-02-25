@@ -10,14 +10,17 @@ import Heading from "@tiptap/extension-heading";
 import Link from "@tiptap/extension-link";
 import { useEffect, useRef, useCallback } from "react";
 import { SlashCommand, SlashMenu } from "./slash-command";
+import { InlineNudge } from "./inline-nudge";
+import type { EvidenceNudge } from "@/hooks/use-evidence-nudges";
 
 interface TiptapEditorProps {
   content: Record<string, unknown>;
   onSave: (content: Record<string, unknown>) => void;
   onSaveStatusChange: (status: "saving" | "saved" | "idle") => void;
-  onTextChange?: (sectionText: string) => void;
+  onTextChange?: (sectionText: string, sectionName: string | null) => void;
   onReady?: (fullText: string) => void;
   onEditorInstance?: (editor: Editor) => void;
+  inlineNudges?: EvidenceNudge[];
 }
 
 function extractCurrentSection(editor: Editor): string {
@@ -53,6 +56,29 @@ function extractCurrentSection(editor: Editor): string {
   return doc.textBetween(sectionStart, sectionEnd, "\n", " ").trim();
 }
 
+function extractCurrentSectionName(editor: Editor): string | null {
+  const { from } = editor.state.selection;
+  const doc = editor.state.doc;
+  let lastHeading: string | null = null;
+  doc.forEach((node, offset) => {
+    if (node.type.name === "heading" && offset <= from) {
+      lastHeading = node.textContent;
+    }
+  });
+  return lastHeading;
+}
+
+function isSectionThin(editor: Editor): boolean {
+  const sectionText = extractCurrentSection(editor);
+  const sectionName = extractCurrentSectionName(editor);
+  // Strip heading text from the section content if present
+  const body = sectionName
+    ? sectionText.replace(sectionName, "").trim()
+    : sectionText;
+  const words = body.split(/\s+/).filter(Boolean);
+  return words.length < 20;
+}
+
 export function TiptapEditor({
   content,
   onSave,
@@ -60,6 +86,7 @@ export function TiptapEditor({
   onTextChange,
   onReady,
   onEditorInstance,
+  inlineNudges,
 }: TiptapEditorProps) {
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const contentInitialized = useRef(false);
@@ -132,7 +159,8 @@ export function TiptapEditor({
       // Fire section text change for context panel (skip during initial setContent)
       if (!initializingRef.current && onTextChangeRef.current) {
         const sectionText = extractCurrentSection(editor);
-        onTextChangeRef.current(sectionText);
+        const sectionName = extractCurrentSectionName(editor);
+        onTextChangeRef.current(sectionText, sectionName);
       }
     },
   });
@@ -193,6 +221,14 @@ export function TiptapEditor({
     <div className="tiptap-wrapper relative">
       <EditorContent editor={editor} />
       <SlashMenu editor={editor} />
+      {inlineNudges && inlineNudges.length > 0 && (
+        <InlineNudge
+          editor={editor}
+          nudges={inlineNudges}
+          isSectionThin={isSectionThin(editor)}
+          currentSectionName={extractCurrentSectionName(editor)}
+        />
+      )}
     </div>
   );
 }

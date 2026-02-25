@@ -152,6 +152,19 @@ export interface MarketResearchResponse {
   bestPractices: MarketSearchResult[];
 }
 
+// Evidence cluster types
+
+export interface EvidenceCluster {
+  id: string;
+  workspace_id: string;
+  label: string;
+  summary: string;
+  evidence_ids: string[];
+  evidence_count: number;
+  section_relevance: Record<string, number>;
+  computed_at: string;
+}
+
 // Feasibility assessment types
 
 export interface FeasibilityAssessment {
