@@ -218,6 +218,25 @@ export default function SettingsPage() {
     }
   }
 
+  async function handleDisconnectGitHub() {
+    setDisconnecting(true);
+    try {
+      const res = await fetch("/api/auth/github/disconnect", { method: "POST" });
+      if (!res.ok) {
+        toast({ message: "Failed to disconnect GitHub." });
+        return;
+      }
+      setArchSummary(null);
+      refreshStatus();
+      // Force page reload to update workspace.github_token from server
+      window.location.reload();
+    } catch {
+      toast({ message: "Failed to disconnect. Try again." });
+    } finally {
+      setDisconnecting(false);
+    }
+  }
+
   async function handleDisconnect(connId?: string) {
     setDisconnecting(true);
     try {
@@ -434,13 +453,22 @@ export default function SettingsPage() {
                   Connected as {githubUsername}
                 </span>
               </div>
-              <Button
-                variant="secondary"
-                className="mt-4"
-                onClick={() => setRepoPickerOpen(true)}
-              >
-                Select Repository
-              </Button>
+              <div className="mt-4 flex items-center gap-2">
+                <Button
+                  variant="secondary"
+                  onClick={() => setRepoPickerOpen(true)}
+                >
+                  Select Repository
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={handleDisconnectGitHub}
+                  disabled={disconnecting}
+                >
+                  Disconnect GitHub
+                </Button>
+              </div>
             </div>
           ) : (
             <>
@@ -567,13 +595,23 @@ export default function SettingsPage() {
               )}
 
               {/* Add another repo */}
-              <Button
-                variant="secondary"
-                icon={Plus}
-                onClick={() => setRepoPickerOpen(true)}
-              >
-                Add another repository
-              </Button>
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="secondary"
+                  icon={Plus}
+                  onClick={() => setRepoPickerOpen(true)}
+                >
+                  Add another repository
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={handleDisconnectGitHub}
+                  disabled={disconnecting}
+                >
+                  Disconnect GitHub
+                </Button>
+              </div>
             </>
           )}
         </div>
