@@ -31,7 +31,6 @@ import { useCodebaseStatus } from "@/hooks/use-codebase-status";
 import { useFeasibility } from "@/hooks/use-feasibility";
 import { useMarketSignals } from "@/hooks/use-market-signals";
 import { useSeededContext } from "@/hooks/use-seeded-context";
-import { useEvidenceNudges } from "@/hooks/use-evidence-nudges";
 import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
 import { useTourTrigger } from "@/hooks/use-tour-trigger";
@@ -92,6 +91,9 @@ export default function EditorPage() {
   const editorRef = useRef<Editor | null>(null);
   const editorTextRef = useRef<string>("");
   const [isEmpty, setIsEmpty] = useState(true);
+  const [currentSectionName, setCurrentSectionName] = useState<string | null>(null);
+  const [panelJustOpened, setPanelJustOpened] = useState(false);
+  const panelHighlightRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Codebase status
   const { connection: codebaseConnection } = useCodebaseStatus(true);
@@ -134,33 +136,76 @@ export default function EditorPage() {
     workspace?.product_description ?? null
   );
 
-  // Evidence nudges (clusters)
-  const {
-    nudges: evidenceNudges,
-    loading: evidenceNudgesLoading,
-    triggerNudges,
-    triggerNudgesImmediate,
-  } = useEvidenceNudges(artifact?.workspace_id ?? "");
+  // Derived insight count for the section hint
+  const insightCount =
+    contextResults.customerEvidence.length +
+    contextResults.codeContext.length +
+    contextResults.relatedSpecs.length;
 
   const handleTextChange = useCallback(
-    (sectionText: string, sectionName: string | null) => {
+    (cumulativeText: string, sectionName: string | null) => {
       const fullText = editorRef.current?.getText() ?? "";
       setIsEmpty(fullText.length < 50);
-      triggerSearch(sectionText);
-      triggerMarketSearch(sectionText);
-      triggerNudges(sectionText, sectionName);
+      triggerSearch(cumulativeText);
+      triggerMarketSearch(cumulativeText);
       if (hasCodebase && artifact) {
-        triggerAssessment(sectionText, title || artifact.title, artifact.type);
+        triggerAssessment(cumulativeText, title || artifact.title, artifact.type);
       }
     },
-    [triggerSearch, triggerMarketSearch, triggerNudges, triggerAssessment, hasCodebase, artifact, title]
+    [triggerSearch, triggerMarketSearch, triggerAssessment, hasCodebase, artifact, title]
   );
 
   const handleSectionChange = useCallback(
-    (sectionText: string, sectionName: string | null) => {
-      triggerNudgesImmediate(sectionText, sectionName);
+    (cumulativeText: string, sectionName: string | null) => {
+      // Context panel search is already debounced; trigger immediate on section nav
+      triggerSearch(cumulativeText);
     },
-    [triggerNudgesImmediate]
+    [triggerSearch]
+  );
+
+  const handleOpenPanel = useCallback(() => {
+    setPanelOpen(true);
+    setPanelJustOpened(true);
+    if (panelHighlightRef.current) clearTimeout(panelHighlightRef.current);
+    panelHighlightRef.current = setTimeout(() => setPanelJustOpened(false), 1500);
+  }, []);
+
+  const handleInsertCitation = useCallback(
+    (text: string, source: string) => {
+      const editor = editorRef.current;
+      if (!editor) return;
+
+      const { from } = editor.state.selection;
+      const $pos = editor.state.doc.resolve(from);
+      const endOfBlock = $pos.end();
+
+      editor
+        .chain()
+        .focus()
+        .insertContentAt(endOfBlock + 1, [
+          {
+            type: "blockquote",
+            content: [
+              {
+                type: "paragraph",
+                content: [{ type: "text", text }],
+              },
+            ],
+          },
+          {
+            type: "paragraph",
+            content: [
+              {
+                type: "text",
+                marks: [{ type: "italic" }],
+                text: `— ${source}`,
+              },
+            ],
+          },
+        ])
+        .run();
+    },
+    []
   );
 
   const handleEditorReady = useCallback(
@@ -196,13 +241,6 @@ export default function EditorPage() {
           .eq("id", artifactData.workspace_id)
           .single();
         if (ws) setWorkspace(ws);
-
-        // Fire-and-forget: trigger cluster computation
-        fetch("/api/clusters/compute", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ workspaceId: artifactData.workspace_id }),
-        }).catch(() => {});
       }
       setLoading(false);
     }
@@ -389,10 +427,11 @@ export default function EditorPage() {
     document.title = title ? `Koso — ${title}` : "Koso — Editor";
   }, [title]);
 
-  // Cleanup saved timer
+  // Cleanup timers
   useEffect(() => {
     return () => {
       if (savedTimerRef.current) clearTimeout(savedTimerRef.current);
+      if (panelHighlightRef.current) clearTimeout(panelHighlightRef.current);
     };
   }, []);
 
@@ -547,7 +586,9 @@ export default function EditorPage() {
               onSectionChange={handleSectionChange}
               onReady={handleEditorReady}
               onEditorInstance={handleEditorInstance}
-              inlineNudges={evidenceNudges}
+              onSectionNameChange={setCurrentSectionName}
+              insightCount={insightCount}
+              onOpenPanel={handleOpenPanel}
             />
           </div>
 
@@ -585,8 +626,9 @@ export default function EditorPage() {
             seededContext={seededContext}
             codebaseStatus={codebaseConnection?.status ?? null}
             productName={workspace?.name ?? null}
-            evidenceNudges={evidenceNudges}
-            evidenceNudgesLoading={evidenceNudgesLoading}
+            currentSectionName={currentSectionName}
+            panelJustOpened={panelJustOpened}
+            onInsertCitation={handleInsertCitation}
           />
 
           {/* Feasibility section — below code context */}

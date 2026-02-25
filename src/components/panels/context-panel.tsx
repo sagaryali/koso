@@ -2,12 +2,11 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Link2, Code, ExternalLink } from "lucide-react";
+import { Link2, Code, ExternalLink, Quote } from "lucide-react";
 import { Badge, Dialog, Skeleton, Icon } from "@/components/ui";
 import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
 import type { ContextSearchResult, MarketSearchResult, Evidence } from "@/types";
-import type { EvidenceNudge } from "@/hooks/use-evidence-nudges";
 import type { SeededSpec, SeededCodeModule, SeededContextData } from "@/hooks/use-seeded-context";
 
 interface ContextPanelProps {
@@ -26,8 +25,9 @@ interface ContextPanelProps {
   seededContext: SeededContextData;
   codebaseStatus: string | null;
   productName: string | null;
-  evidenceNudges?: EvidenceNudge[];
-  evidenceNudgesLoading?: boolean;
+  currentSectionName?: string | null;
+  panelJustOpened?: boolean;
+  onInsertCitation?: (text: string, source: string) => void;
 }
 
 function SectionLabel({ children }: { children: React.ReactNode }) {
@@ -133,7 +133,13 @@ function RelatedSpecCard({
 
 // --- Customer Evidence (search-driven) ---
 
-function EvidenceCard({ result }: { result: ContextSearchResult }) {
+function EvidenceCard({
+  result,
+  onInsertCitation,
+}: {
+  result: ContextSearchResult;
+  onInsertCitation?: (text: string, source: string) => void;
+}) {
   const [open, setOpen] = useState(false);
   const source = (result.metadata?.source as string) || "Unknown source";
   const type = (result.metadata?.type as string) || "feedback";
@@ -162,6 +168,18 @@ function EvidenceCard({ result }: { result: ContextSearchResult }) {
               <Badge key={tag}>{tag}</Badge>
             ))}
           </div>
+        )}
+        {onInsertCitation && (
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onInsertCitation(result.chunkText, source);
+            }}
+            className="inline-flex cursor-pointer items-center gap-1 border-none bg-transparent p-0 text-[11px] text-text-tertiary hover:text-text-primary"
+          >
+            <Icon icon={Quote} size={12} />
+            Insert quote
+          </button>
         )}
       </div>
 
@@ -407,35 +425,6 @@ function SeededCodeCard({ module }: { module: SeededCodeModule }) {
   );
 }
 
-// --- Evidence Nudge Card (for patterns section) ---
-
-function EvidenceNudgeCard({ nudge }: { nudge: EvidenceNudge }) {
-  const maxCount = 100; // Normalize bar against a reasonable max
-  const barWidth = Math.min((nudge.evidenceCount / maxCount) * 100, 100);
-
-  return (
-    <div className="space-y-1.5">
-      <div className="flex items-center justify-between gap-2">
-        <span className="text-[13px] font-medium text-text-primary">
-          {nudge.label}
-        </span>
-        <span className="shrink-0 text-[11px] font-medium text-text-tertiary">
-          {nudge.evidenceCount} {nudge.evidenceCount === 1 ? "signal" : "signals"}
-        </span>
-      </div>
-      <p className="line-clamp-1 text-xs text-text-secondary">
-        {nudge.summary}
-      </p>
-      <div className="h-1 w-full bg-border-default">
-        <div
-          className="h-full bg-text-tertiary"
-          style={{ width: `${barWidth}%` }}
-        />
-      </div>
-    </div>
-  );
-}
-
 // --- Main Component ---
 
 export function ContextPanel({
@@ -454,8 +443,9 @@ export function ContextPanel({
   seededContext,
   codebaseStatus,
   productName,
-  evidenceNudges,
-  evidenceNudgesLoading,
+  currentSectionName,
+  panelJustOpened,
+  onInsertCitation,
 }: ContextPanelProps) {
   // Seeded view for empty specs
   if (isEmpty) {
@@ -575,8 +565,15 @@ export function ContextPanel({
     <div className="space-y-6 p-6">
       {/* Header */}
       <div className="flex items-center gap-2">
-        <div className="text-[11px] font-medium uppercase tracking-[0.05em] text-text-tertiary">
-          Context
+        <div
+          className={cn(
+            "text-[11px] font-medium uppercase tracking-[0.05em] transition-colors duration-300",
+            panelJustOpened ? "text-text-primary" : "text-text-tertiary"
+          )}
+        >
+          {currentSectionName
+            ? `Context for: ${currentSectionName}`
+            : "Context"}
         </div>
         {hasCodeResults && (
           <Icon icon={Code} size={12} className="text-text-tertiary" />
@@ -621,7 +618,7 @@ export function ContextPanel({
             <StaggeredList>
               {customerEvidence.map((r, i) => (
                 <StaggerItem key={r.id} index={i}>
-                  <EvidenceCard result={r} />
+                  <EvidenceCard result={r} onInsertCitation={onInsertCitation} />
                 </StaggerItem>
               ))}
             </StaggeredList>
@@ -632,27 +629,6 @@ export function ContextPanel({
           )}
         </div>
       </section>
-
-      {/* Evidence Patterns */}
-      {evidenceNudges && evidenceNudges.length > 0 && (
-        <section>
-          <SectionLabel>Evidence Patterns</SectionLabel>
-          <SectionDivider />
-          <div className="mt-3 space-y-3">
-            {evidenceNudgesLoading ? (
-              <Skeleton variant="list" lines={2} />
-            ) : (
-              <StaggeredList>
-                {evidenceNudges.map((nudge, i) => (
-                  <StaggerItem key={nudge.id} index={i}>
-                    <EvidenceNudgeCard nudge={nudge} />
-                  </StaggerItem>
-                ))}
-              </StaggeredList>
-            )}
-          </div>
-        </section>
-      )}
 
       {/* Code Context */}
       <section>

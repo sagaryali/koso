@@ -10,8 +10,7 @@ import Heading from "@tiptap/extension-heading";
 import Link from "@tiptap/extension-link";
 import { useState, useEffect, useRef, useCallback } from "react";
 import { SlashCommand, SlashMenu } from "./slash-command";
-import { InlineNudge } from "./inline-nudge";
-import type { EvidenceNudge } from "@/hooks/use-evidence-nudges";
+import { SectionHint } from "./section-hint";
 
 interface TiptapEditorProps {
   content: Record<string, unknown>;
@@ -21,10 +20,12 @@ interface TiptapEditorProps {
   onSectionChange?: (sectionText: string, sectionName: string | null) => void;
   onReady?: (fullText: string) => void;
   onEditorInstance?: (editor: Editor) => void;
-  inlineNudges?: EvidenceNudge[];
+  onSectionNameChange?: (name: string | null) => void;
+  insightCount?: number;
+  onOpenPanel?: () => void;
 }
 
-function extractCurrentSection(editor: Editor): string {
+function extractCumulativeContext(editor: Editor): string {
   const { from } = editor.state.selection;
   const doc = editor.state.doc;
 
@@ -36,17 +37,16 @@ function extractCurrentSection(editor: Editor): string {
   });
 
   if (headingPositions.length === 0) {
+    // No headings — return full text
     const text = editor.getText();
     const words = text.split(/\s+/).filter(Boolean);
     return words.slice(-200).join(" ");
   }
 
-  let sectionStart = 0;
+  // Find the end of the current section (all text from doc start through current section)
   let sectionEnd = doc.content.size;
-
   for (let i = 0; i < headingPositions.length; i++) {
     if (headingPositions[i] <= from) {
-      sectionStart = headingPositions[i];
       sectionEnd =
         i + 1 < headingPositions.length
           ? headingPositions[i + 1]
@@ -54,7 +54,7 @@ function extractCurrentSection(editor: Editor): string {
     }
   }
 
-  return doc.textBetween(sectionStart, sectionEnd, "\n", " ").trim();
+  return doc.textBetween(0, sectionEnd, "\n", " ").trim();
 }
 
 function extractCurrentSectionName(editor: Editor): string | null {
@@ -69,17 +69,6 @@ function extractCurrentSectionName(editor: Editor): string | null {
   return lastHeading;
 }
 
-function isSectionThin(editor: Editor): boolean {
-  const sectionText = extractCurrentSection(editor);
-  const sectionName = extractCurrentSectionName(editor);
-  // Strip heading text from the section content if present
-  const body = sectionName
-    ? sectionText.replace(sectionName, "").trim()
-    : sectionText;
-  const words = body.split(/\s+/).filter(Boolean);
-  return words.length < 20;
-}
-
 export function TiptapEditor({
   content,
   onSave,
@@ -88,7 +77,9 @@ export function TiptapEditor({
   onSectionChange,
   onReady,
   onEditorInstance,
-  inlineNudges,
+  onSectionNameChange,
+  insightCount,
+  onOpenPanel,
 }: TiptapEditorProps) {
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const contentInitialized = useRef(false);
@@ -97,11 +88,11 @@ export function TiptapEditor({
   const onSectionChangeRef = useRef(onSectionChange);
   const onReadyRef = useRef(onReady);
   const onEditorInstanceRef = useRef(onEditorInstance);
+  const onSectionNameChangeRef = useRef(onSectionNameChange);
   const lastSectionNameRef = useRef<string | null>(null);
 
-  // Track current section reactively so InlineNudge gets fresh props on selection changes
+  // Track current section reactively so SectionHint gets fresh props on selection changes
   const [currentSectionName, setCurrentSectionName] = useState<string | null>(null);
-  const [sectionThin, setSectionThin] = useState(false);
 
   useEffect(() => {
     onTextChangeRef.current = onTextChange;
@@ -118,6 +109,10 @@ export function TiptapEditor({
   useEffect(() => {
     onEditorInstanceRef.current = onEditorInstance;
   }, [onEditorInstance]);
+
+  useEffect(() => {
+    onSectionNameChangeRef.current = onSectionNameChange;
+  }, [onSectionNameChange]);
 
   const save = useCallback(
     (json: Record<string, unknown>) => {
@@ -170,11 +165,11 @@ export function TiptapEditor({
 
       // Fire section text change for context panel (skip during initial setContent)
       if (!initializingRef.current && onTextChangeRef.current) {
-        const sectionText = extractCurrentSection(editor);
+        const cumulativeText = extractCumulativeContext(editor);
         const sectionName = extractCurrentSectionName(editor);
-        onTextChangeRef.current(sectionText, sectionName);
+        onTextChangeRef.current(cumulativeText, sectionName);
         setCurrentSectionName(sectionName);
-        setSectionThin(isSectionThin(editor));
+        onSectionNameChangeRef.current?.(sectionName);
         lastSectionNameRef.current = sectionName;
       }
     },
@@ -183,14 +178,14 @@ export function TiptapEditor({
 
       const sectionName = extractCurrentSectionName(editor);
       setCurrentSectionName(sectionName);
-      setSectionThin(isSectionThin(editor));
+      onSectionNameChangeRef.current?.(sectionName);
 
-      // When cursor moves to a different section, fire immediate nudge refresh
+      // When cursor moves to a different section, fire immediate context refresh
       if (sectionName !== lastSectionNameRef.current) {
         lastSectionNameRef.current = sectionName;
-        const sectionText = extractCurrentSection(editor);
+        const cumulativeText = extractCumulativeContext(editor);
         if (onSectionChangeRef.current) {
-          onSectionChangeRef.current(sectionText, sectionName);
+          onSectionChangeRef.current(cumulativeText, sectionName);
         }
       }
     },
@@ -252,12 +247,12 @@ export function TiptapEditor({
     <div className="tiptap-wrapper relative">
       <EditorContent editor={editor} />
       <SlashMenu editor={editor} />
-      {inlineNudges && inlineNudges.length > 0 && (
-        <InlineNudge
+      {insightCount !== undefined && insightCount > 0 && onOpenPanel && (
+        <SectionHint
           editor={editor}
-          nudges={inlineNudges}
-          isSectionThin={sectionThin}
+          insightCount={insightCount}
           currentSectionName={currentSectionName}
+          onOpenPanel={onOpenPanel}
         />
       )}
     </div>
