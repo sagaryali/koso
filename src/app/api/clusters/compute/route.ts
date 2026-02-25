@@ -25,12 +25,10 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ skipped: true });
     }
 
-    // Fire-and-forget
-    computeClusters(workspaceId).catch((err) =>
-      console.error("[api/clusters/compute] Background error:", err)
-    );
+    // Await so Vercel doesn't kill the function before completion
+    await computeClusters(workspaceId);
 
-    return NextResponse.json({ started: true });
+    return NextResponse.json({ completed: true });
   } catch (err) {
     console.error("[api/clusters/compute] Error:", err);
     const message =

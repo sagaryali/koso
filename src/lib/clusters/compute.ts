@@ -48,10 +48,13 @@ export async function shouldRecompute(
     .single();
 
   if (!log) return true; // Never computed
-  if (log.status === "computing") return false;
 
-  const hoursSinceLastCompute =
-    (Date.now() - new Date(log.last_computed_at).getTime()) / (1000 * 60 * 60);
+  // If stuck in computing for more than 5 minutes, allow recompute
+  const minutesSinceLastCompute =
+    (Date.now() - new Date(log.last_computed_at).getTime()) / (1000 * 60);
+  if (log.status === "computing" && minutesSinceLastCompute < 5) return false;
+
+  const hoursSinceLastCompute = minutesSinceLastCompute / 60;
   if (hoursSinceLastCompute >= 6) return true;
 
   const evidenceDelta = evidenceCount - log.evidence_count_at_computation;
