@@ -455,7 +455,7 @@ export function AddEvidenceDialog({
                   placeholder="Paste feedback from Slack, email, surveys, support tickets... We'll split them into individual items."
                   value={bulkRaw}
                   onChange={(e) => setBulkRaw(e.target.value)}
-                  className="min-h-[200px]"
+                  className="min-h-[200px] max-h-[200px]"
                 />
                 <Input
                   label="Source (optional)"
