@@ -26,6 +26,7 @@ import { TiptapEditor } from "@/components/editor/tiptap-editor";
 import { ContextPanel } from "@/components/panels/context-panel";
 import { FeasibilityPanel } from "@/components/panels/FeasibilityPanel";
 import { AddEvidenceDialog } from "@/components/evidence/add-evidence-dialog";
+import { SaveAsTemplateDialog } from "@/components/save-as-template-dialog";
 import { useContextPanel } from "@/hooks/use-context-panel";
 import { useCodebaseStatus } from "@/hooks/use-codebase-status";
 import { useFeasibility } from "@/hooks/use-feasibility";
@@ -83,6 +84,7 @@ export default function EditorPage() {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [evidenceDialogOpen, setEvidenceDialogOpen] = useState(false);
   const [evidencePrefill, setEvidencePrefill] = useState("");
+  const [templateDialogOpen, setTemplateDialogOpen] = useState(false);
   const [saveStatus, setSaveStatus] = useState<"saving" | "saved" | "idle">(
     "idle"
   );
@@ -265,14 +267,26 @@ export default function EditorPage() {
       if (savedTimerRef.current) clearTimeout(savedTimerRef.current);
       savedTimerRef.current = setTimeout(() => setSaveStatus("idle"), 2000);
 
-      // Fire-and-forget: re-embed this artifact
+      // Fire-and-forget: re-embed this artifact then auto-link
       fetch("/api/embeddings/index", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ sourceId: id, sourceType: "artifact" }),
-      }).catch(() => {
-        toast({ message: "Embeddings failed to update. Will retry on next save." });
-      });
+      })
+        .then(() =>
+          fetch("/api/links/auto", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              sourceId: id,
+              sourceType: "artifact",
+              workspaceId: artifact?.workspace_id,
+            }),
+          })
+        )
+        .catch(() => {
+          toast({ message: "Embeddings failed to update. Will retry on next save." });
+        });
     },
     [id]
   );
@@ -566,6 +580,13 @@ export default function EditorPage() {
             <Button
               variant="ghost"
               size="sm"
+              onClick={() => setTemplateDialogOpen(true)}
+            >
+              Save as template
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
               icon={Trash2}
               onClick={() => setDeleteDialogOpen(true)}
             >
@@ -662,6 +683,18 @@ export default function EditorPage() {
           prefillContent={evidencePrefill}
           prefillSource={title || artifact.title}
           mini
+        />
+      )}
+
+      {/* Save as Template */}
+      {artifact && (
+        <SaveAsTemplateDialog
+          open={templateDialogOpen}
+          onClose={() => setTemplateDialogOpen(false)}
+          workspaceId={artifact.workspace_id}
+          content={artifact.content}
+          artifactType={artifact.type}
+          defaultLabel={title || artifact.title}
         />
       )}
 

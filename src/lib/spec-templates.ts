@@ -1,6 +1,6 @@
 import type { ArtifactType } from "@/types";
 
-interface SpecTemplate {
+export interface SpecTemplate {
   id: string;
   label: string;
   description: string;

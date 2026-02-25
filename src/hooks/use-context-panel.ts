@@ -103,7 +103,7 @@ export function useContextPanel(workspaceId: string, artifactId: string) {
   const triggerSearch = useCallback(
     (text: string) => {
       if (debounceRef.current) clearTimeout(debounceRef.current);
-      debounceRef.current = setTimeout(() => executeSearch(text), 3000);
+      debounceRef.current = setTimeout(() => executeSearch(text), 1000);
     },
     [executeSearch]
   );

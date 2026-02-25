@@ -9,9 +9,10 @@ interface RepoPickerProps {
   open: boolean;
   onClose: () => void;
   onSelect: (repo: GitHubRepo) => void;
+  connectedRepoNames?: string[];
 }
 
-export function RepoPicker({ open, onClose, onSelect }: RepoPickerProps) {
+export function RepoPicker({ open, onClose, onSelect, connectedRepoNames = [] }: RepoPickerProps) {
   const [repos, setRepos] = useState<GitHubRepo[]>([]);
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(false);
@@ -38,7 +39,10 @@ export function RepoPicker({ open, onClose, onSelect }: RepoPickerProps) {
     fetchRepos();
   }, [open]);
 
+  const connectedSet = new Set(connectedRepoNames);
+
   const filtered = repos.filter((repo) => {
+    if (connectedSet.has(repo.full_name)) return false;
     const q = search.toLowerCase();
     return (
       repo.full_name.toLowerCase().includes(q) ||

@@ -423,9 +423,12 @@ export default function InvestigatePage() {
     <div className="px-12 py-10 page-transition">
       <div className="mx-auto max-w-[720px]">
         <h1 className="mb-1 text-2xl font-bold tracking-tight">Investigate</h1>
-        <p className="mb-8 text-sm text-text-secondary">
+        <p className="mb-4 text-sm text-text-secondary">
           Turn customer feedback into actionable specs.
         </p>
+        <div className="mb-8 border border-border-default bg-bg-secondary px-4 py-3 text-sm text-text-secondary">
+          Tip: You can also start from the <strong>New Spec</strong> button on the home page to draft a spec from your existing evidence.
+        </div>
 
         {/* Step indicators */}
         <div className="mb-8 flex items-center gap-2 text-xs text-text-tertiary">

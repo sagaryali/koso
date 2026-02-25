@@ -12,6 +12,8 @@ import { useCodebaseStatus } from "@/hooks/use-codebase-status";
 import { useTourTrigger } from "@/hooks/use-tour-trigger";
 import { HOME_TOUR } from "@/lib/tours";
 import { NewSpecDialog } from "@/components/new-spec-dialog";
+import { EvidenceFlow } from "@/components/spec-creation/evidence-flow";
+import { Dialog } from "@/components/ui";
 import type { Artifact, Evidence, EvidenceType } from "@/types";
 
 function getGreeting() {
@@ -92,7 +94,7 @@ export default function HomePage() {
   const { workspace } = useWorkspace();
   const router = useRouter();
   const supabase = createClient();
-  const { connection } = useCodebaseStatus(true);
+  const { connection, connections } = useCodebaseStatus(true);
 
   useTourTrigger("home", HOME_TOUR, 800);
 
@@ -115,6 +117,7 @@ export default function HomePage() {
 
   const [checklistDismissed, setChecklistDismissed] = useState(true); // default true to avoid flash
   const [newSpecOpen, setNewSpecOpen] = useState(false);
+  const [evidenceFlowOpen, setEvidenceFlowOpen] = useState(false);
 
   useEffect(() => {
     document.title = "Koso — Home";
@@ -563,7 +566,7 @@ export default function HomePage() {
   // ── Checklist completion ──────────────────────────────────────
   const hasEvidence = evidenceCount > 0;
   const hasSpec = recentArtifacts.length > 0;
-  const hasCodebase = connection?.status === "ready";
+  const hasCodebase = connections.some((c) => c.status === "ready");
   const completedCount = [hasEvidence, hasSpec, hasCodebase].filter(Boolean).length;
   const allComplete = completedCount === 3;
   const showChecklist = !allComplete && !checklistDismissed;
@@ -706,6 +709,22 @@ export default function HomePage() {
         </div>
       )}
 
+      {/* Unlinked evidence nudge */}
+      {unlinkedCount > 3 && (
+        <div className="mt-6 border border-border-default bg-bg-secondary px-4 py-3">
+          <p className="text-sm text-text-secondary">
+            You have{" "}
+            <button
+              onClick={() => router.push("/evidence?filter=unlinked")}
+              className="cursor-pointer font-medium text-text-primary underline"
+            >
+              {unlinkedCount} unlinked evidence items
+            </button>
+            . Consider linking them to specs or starting a new spec from evidence.
+          </p>
+        </div>
+      )}
+
       {/* 3. Quick-add evidence */}
       <div className="mt-10" data-tour="home-quick-add">
         <div className="mb-3 flex gap-2">
@@ -796,11 +815,37 @@ export default function HomePage() {
       </div>
 
       {workspace && (
-        <NewSpecDialog
-          open={newSpecOpen}
-          onClose={() => setNewSpecOpen(false)}
-          workspaceId={workspace.id}
-        />
+        <>
+          <NewSpecDialog
+            open={newSpecOpen}
+            onClose={() => setNewSpecOpen(false)}
+            workspaceId={workspace.id}
+            evidenceCount={evidenceCount}
+            onStartFromEvidence={() => setEvidenceFlowOpen(true)}
+          />
+
+          {/* Evidence Flow Dialog */}
+          <Dialog
+            open={evidenceFlowOpen}
+            onClose={() => setEvidenceFlowOpen(false)}
+            className="max-w-xl"
+          >
+            <h2 className="text-lg font-bold tracking-tight">
+              New Spec from Evidence
+            </h2>
+            <p className="mt-1 mb-4 text-sm text-text-secondary">
+              Select evidence, cluster themes, then draft a spec.
+            </p>
+            <EvidenceFlow
+              workspaceId={workspace.id}
+              workspace={workspace}
+              hasCodebase={connection?.status === "ready"}
+              codebaseRepoName={connection?.repo_name}
+              onComplete={() => setEvidenceFlowOpen(false)}
+              onCancel={() => setEvidenceFlowOpen(false)}
+            />
+          </Dialog>
+        </>
       )}
     </div>
   );

@@ -10,18 +10,18 @@ export async function GET() {
   }
   const { workspace, supabase } = result;
 
-  const { data: connection } = await supabase
+  const { data: connections } = await supabase
     .from("codebase_connections")
     .select("*")
     .eq("workspace_id", workspace.id)
-    .single();
+    .order("created_at", { ascending: true });
 
-  if (!connection) {
-    return NextResponse.json({ connection: null, githubUsername: workspace.github_username });
-  }
+  const allConnections = connections ?? [];
 
   return NextResponse.json({
-    connection,
+    // Backward compat: first connection as `connection`
+    connection: allConnections.length > 0 ? allConnections[0] : null,
+    connections: allConnections,
     githubUsername: workspace.github_username,
   });
 }

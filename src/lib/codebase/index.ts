@@ -152,13 +152,9 @@ export async function indexRepository(
 
     console.log(`[indexer] Indexing complete for ${connection.repo_name}`);
 
-    // Fire-and-forget: AI summarization runs in the background
-    // If this gets killed by Vercel timeout, modules are still indexed and usable
-    summarizeModules(connectionId, workspaceId)
-      .then(() => generateArchitectureSummary(connectionId, workspaceId))
-      .catch((err) =>
-        console.error("[indexer] Background summarization failed:", err)
-      );
+    // AI summarization — awaited since caller uses after()
+    await summarizeModules(connectionId, workspaceId);
+    await generateArchitectureSummary(connectionId, workspaceId);
   } catch (err) {
     console.error(`[indexer] Indexing failed:`, err);
     await supabase
@@ -492,18 +488,12 @@ export async function resyncRepository(
       })
       .eq("id", connectionId);
 
-    // Fire-and-forget: AI summarization for new modules
+    // AI summarization — awaited since caller uses after()
     if (processedCount > 0) {
-      summarizeModules(connectionId, workspaceId)
-        .then(() => generateArchitectureSummary(connectionId, workspaceId))
-        .catch((err) =>
-          console.error("[indexer] Background re-sync summarization failed:", err)
-        );
+      await summarizeModules(connectionId, workspaceId);
+      await generateArchitectureSummary(connectionId, workspaceId);
     } else {
-      // Even if no new files, regenerate architecture summary if needed
-      generateArchitectureSummary(connectionId, workspaceId).catch((err) =>
-        console.error("[indexer] Background architecture summary failed:", err)
-      );
+      await generateArchitectureSummary(connectionId, workspaceId);
     }
   } catch (err) {
     console.error("[indexer] Re-sync failed:", err);

@@ -17,7 +17,7 @@ import { DeleteWorkspaceDialog } from "@/components/delete-workspace-dialog";
 import { useCodebaseStatus } from "@/hooks/use-codebase-status";
 import { useWorkspace } from "@/lib/workspace-context";
 import { createClient } from "@/lib/supabase/client";
-import type { GitHubRepo } from "@/types";
+import type { GitHubRepo, CustomTemplate } from "@/types";
 
 export default function SettingsPage() {
   const { workspace, allWorkspaces } = useWorkspace();
@@ -34,9 +34,11 @@ export default function SettingsPage() {
   const [archSummary, setArchSummary] = useState<string | null>(null);
   const [disconnecting, setDisconnecting] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
+  const [customTemplates, setCustomTemplates] = useState<CustomTemplate[]>([]);
+  const [templatesLoading, setTemplatesLoading] = useState(false);
   const supabase = createClient();
 
-  const { connection, githubUsername, refresh: refreshStatus } =
+  const { connection, connections, githubUsername, refresh: refreshStatus } =
     useCodebaseStatus(true);
 
   useEffect(() => {
@@ -84,6 +86,31 @@ export default function SettingsPage() {
 
     fetchArch();
   }, [workspace, connection?.status]);
+
+  // Fetch custom templates
+  useEffect(() => {
+    if (!workspace) return;
+    setTemplatesLoading(true);
+
+    async function fetchTemplates() {
+      const { data } = await supabase
+        .from("custom_templates")
+        .select("*")
+        .eq("workspace_id", workspace!.id)
+        .order("created_at", { ascending: false });
+
+      setCustomTemplates(data ?? []);
+      setTemplatesLoading(false);
+    }
+
+    fetchTemplates();
+  }, [workspace?.id]);
+
+  async function deleteTemplate(templateId: string) {
+    await supabase.from("custom_templates").delete().eq("id", templateId);
+    setCustomTemplates((prev) => prev.filter((t) => t.id !== templateId));
+    toast({ message: "Template deleted" });
+  }
 
   function extractTextFromContent(content: Record<string, unknown>): string {
     if (!content || typeof content !== "object") return "";
@@ -173,9 +200,13 @@ export default function SettingsPage() {
     }
   }
 
-  async function handleResync() {
+  async function handleResync(connId?: string) {
     try {
-      const res = await fetch("/api/codebase/sync", { method: "POST" });
+      const res = await fetch("/api/codebase/sync", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: connId ? JSON.stringify({ connectionId: connId }) : "{}",
+      });
       if (!res.ok) {
         const data = await res.json().catch(() => ({ error: "Unknown error" }));
         toast({ message: `Failed to sync: ${data.error || "Unknown error"}. Retry?` });
@@ -187,10 +218,14 @@ export default function SettingsPage() {
     }
   }
 
-  async function handleDisconnect() {
+  async function handleDisconnect(connId?: string) {
     setDisconnecting(true);
     try {
-      const res = await fetch("/api/codebase/disconnect", { method: "POST" });
+      const res = await fetch("/api/codebase/disconnect", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: connId ? JSON.stringify({ connectionId: connId }) : "{}",
+      });
       if (!res.ok) {
         toast({ message: "Failed to disconnect repository." });
         return;
@@ -233,9 +268,6 @@ export default function SettingsPage() {
       </div>
     );
   }
-
-  const isSyncing =
-    connection?.status === "syncing" || connection?.status === "pending";
 
   return (
     <div className="max-w-[720px] px-12 py-10 page-transition">
@@ -334,14 +366,54 @@ export default function SettingsPage() {
         </div>
       </section>
 
+      {/* Custom Templates */}
+      <section className="mt-16">
+        <h2 className="text-lg font-medium tracking-tight">Templates</h2>
+        <p className="mt-2 text-sm text-text-secondary">
+          Custom spec templates saved from your specs.
+        </p>
+        <div className="mt-6 space-y-2">
+          {templatesLoading ? (
+            <Skeleton variant="block" height={60} />
+          ) : customTemplates.length === 0 ? (
+            <p className="text-sm text-text-tertiary">
+              No custom templates yet. Use &ldquo;Save as template&rdquo; in the
+              editor to create one.
+            </p>
+          ) : (
+            customTemplates.map((tmpl) => (
+              <div
+                key={tmpl.id}
+                className="flex items-center justify-between border border-border-default px-4 py-3"
+              >
+                <div className="min-w-0 flex-1">
+                  <span className="text-sm font-medium">{tmpl.label}</span>
+                  {tmpl.description && (
+                    <p className="text-xs text-text-tertiary">
+                      {tmpl.description}
+                    </p>
+                  )}
+                </div>
+                <button
+                  onClick={() => deleteTemplate(tmpl.id)}
+                  className="cursor-pointer text-text-tertiary hover:text-text-primary"
+                >
+                  <Icon icon={Trash2} />
+                </button>
+              </div>
+            ))
+          )}
+        </div>
+      </section>
+
       {/* Connected Codebase */}
       <section className="mt-16">
         <h2 className="text-lg font-medium tracking-tight">
-          Connected Codebase
+          Connected Codebases
         </h2>
-        <div className="mt-6 border border-border-default p-6">
+        <div className="mt-6 space-y-4">
           {!workspace?.github_token && !githubUsername ? (
-            <>
+            <div className="border border-border-default p-6">
               <p className="text-sm text-text-tertiary">
                 No repository connected
               </p>
@@ -353,9 +425,9 @@ export default function SettingsPage() {
               >
                 Connect GitHub
               </Button>
-            </>
-          ) : !connection ? (
-            <>
+            </div>
+          ) : connections.length === 0 ? (
+            <div className="border border-border-default p-6">
               <div className="flex items-center gap-2">
                 <Icon icon={Github} className="text-text-secondary" />
                 <span className="text-sm font-medium">
@@ -369,82 +441,113 @@ export default function SettingsPage() {
               >
                 Select Repository
               </Button>
-            </>
+            </div>
           ) : (
-            <div className="space-y-4">
-              {/* Repo info */}
-              <div className="flex items-start justify-between">
-                <div>
-                  <div className="flex items-center gap-2">
-                    <Icon icon={Github} className="text-text-secondary" />
-                    <span className="text-sm font-medium">
-                      {connection.repo_name}
-                    </span>
-                  </div>
-                  <div className="mt-1 flex items-center gap-3 text-xs text-text-tertiary">
-                    <span>{connection.default_branch}</span>
-                    {connection.last_synced_at && (
-                      <span>
-                        Synced{" "}
-                        {new Date(connection.last_synced_at).toLocaleDateString(
-                          "en-US",
-                          {
-                            month: "short",
-                            day: "numeric",
-                            hour: "numeric",
-                            minute: "2-digit",
-                          }
-                        )}
-                      </span>
+            <>
+              {connections.map((conn) => {
+                const connSyncing =
+                  conn.status === "syncing" || conn.status === "pending";
+                return (
+                  <div
+                    key={conn.id}
+                    className="space-y-4 border border-border-default p-6"
+                  >
+                    {/* Repo info */}
+                    <div className="flex items-start justify-between">
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <Icon icon={Github} className="text-text-secondary" />
+                          <span className="text-sm font-medium">
+                            {conn.repo_name}
+                          </span>
+                        </div>
+                        <div className="mt-1 flex items-center gap-3 text-xs text-text-tertiary">
+                          <span>{conn.default_branch}</span>
+                          {conn.last_synced_at && (
+                            <span>
+                              Synced{" "}
+                              {new Date(conn.last_synced_at).toLocaleDateString(
+                                "en-US",
+                                {
+                                  month: "short",
+                                  day: "numeric",
+                                  hour: "numeric",
+                                  minute: "2-digit",
+                                }
+                              )}
+                            </span>
+                          )}
+                          {conn.status === "ready" && (
+                            <>
+                              <span>{conn.file_count} files</span>
+                              <span>{conn.module_count} modules</span>
+                            </>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Sync status */}
+                    {connSyncing && (
+                      <div className="flex items-center gap-2 bg-bg-secondary px-3 py-2">
+                        <div className="h-2 w-2 animate-pulse bg-text-primary" />
+                        <span className="text-sm text-text-secondary">
+                          Indexing...{" "}
+                          {conn.module_count > 0 &&
+                            `${conn.module_count}/${conn.file_count} files`}
+                        </span>
+                      </div>
                     )}
-                    {connection.status === "ready" && (
-                      <>
-                        <span>{connection.file_count} files</span>
-                        <span>{connection.module_count} modules</span>
-                      </>
+
+                    {/* Error state */}
+                    {conn.status === "error" && (
+                      <div className="flex items-start gap-2 border border-state-error bg-bg-secondary px-3 py-2">
+                        <Icon
+                          icon={AlertCircle}
+                          className="mt-0.5 shrink-0 text-state-error"
+                        />
+                        <div>
+                          <p className="text-sm text-state-error">
+                            {conn.error_message || "Indexing failed"}
+                          </p>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="mt-1 text-xs"
+                            onClick={() => handleResync(conn.id)}
+                          >
+                            Retry
+                          </Button>
+                        </div>
+                      </div>
                     )}
+
+                    {/* Actions */}
+                    <div className="flex items-center gap-2 border-t border-border-subtle pt-4">
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        icon={RefreshCw}
+                        onClick={() => handleResync(conn.id)}
+                      >
+                        {connSyncing ? "Retry" : "Re-sync"}
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => handleDisconnect(conn.id)}
+                        disabled={disconnecting}
+                      >
+                        Disconnect
+                      </Button>
+                    </div>
                   </div>
-                </div>
-              </div>
+                );
+              })}
 
-              {/* Sync status */}
-              {isSyncing && (
-                <div className="flex items-center gap-2 bg-bg-secondary px-3 py-2">
-                  <div className="h-2 w-2 animate-pulse bg-text-primary" />
-                  <span className="text-sm text-text-secondary">
-                    Indexing...{" "}
-                    {connection.module_count > 0 &&
-                      `${connection.module_count}/${connection.file_count} files`}
-                  </span>
-                </div>
-              )}
-
-              {/* Error state */}
-              {connection.status === "error" && (
-                <div className="flex items-start gap-2 border border-state-error bg-bg-secondary px-3 py-2">
-                  <Icon
-                    icon={AlertCircle}
-                    className="mt-0.5 shrink-0 text-state-error"
-                  />
-                  <div>
-                    <p className="text-sm text-state-error">
-                      {connection.error_message || "Indexing failed"}
-                    </p>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="mt-1 text-xs"
-                      onClick={handleResync}
-                    >
-                      Retry
-                    </Button>
-                  </div>
-                </div>
-              )}
-
-              {/* Architecture summary */}
-              {archSummary && connection.status === "ready" && (
-                <div className="border-t border-border-subtle pt-4">
+              {/* Architecture summary — show once for all repos */}
+              {archSummary && connections.some((c) => c.status === "ready") && (
+                <div className="border border-border-default p-6">
                   <button
                     onClick={() => setArchExpanded(!archExpanded)}
                     className="flex w-full cursor-pointer items-center gap-1 text-sm font-medium text-text-primary"
@@ -463,27 +566,15 @@ export default function SettingsPage() {
                 </div>
               )}
 
-              {/* Actions */}
-              <div className="flex items-center gap-2 border-t border-border-subtle pt-4">
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  icon={RefreshCw}
-                  onClick={handleResync}
-                  disabled={false}
-                >
-                  {isSyncing ? "Retry" : "Re-sync"}
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={handleDisconnect}
-                  disabled={disconnecting}
-                >
-                  Disconnect
-                </Button>
-              </div>
-            </div>
+              {/* Add another repo */}
+              <Button
+                variant="secondary"
+                icon={Plus}
+                onClick={() => setRepoPickerOpen(true)}
+              >
+                Add another repository
+              </Button>
+            </>
           )}
         </div>
       </section>
@@ -527,6 +618,7 @@ export default function SettingsPage() {
         open={repoPickerOpen}
         onClose={() => setRepoPickerOpen(false)}
         onSelect={handleSelectRepo}
+        connectedRepoNames={connections.map((c) => c.repo_name)}
       />
 
       {/* Delete Workspace Dialog */}

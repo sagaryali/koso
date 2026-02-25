@@ -57,6 +57,11 @@ export interface Evidence {
   content: string;
   source: string | null;
   tags: string[];
+  file_url: string | null;
+  file_name: string | null;
+  file_type: string | null;
+  file_size: number | null;
+  extracted_text: string | null;
   created_at: string;
 }
 
@@ -122,6 +127,19 @@ export interface CodebaseModule {
   embedding: number[] | null;
   raw_content: string | null;
   parsed_ast: Record<string, unknown> | null;
+  updated_at: string;
+}
+
+// Custom template types
+
+export interface CustomTemplate {
+  id: string;
+  workspace_id: string;
+  label: string;
+  description: string;
+  type: ArtifactType;
+  content: Record<string, unknown>;
+  created_at: string;
   updated_at: string;
 }
 

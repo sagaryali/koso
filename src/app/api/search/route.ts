@@ -22,17 +22,46 @@ export async function POST(request: NextRequest) {
       const context = await assembleContext(query, workspaceId);
       const supabase = createAdminClient();
 
-      // Enrich artifacts with title and type metadata
+      // Parallelize all three enrichment queries
       const artifactIds = [
         ...new Set(context.artifacts.map((a) => a.sourceId)),
       ];
-      if (artifactIds.length > 0) {
-        const { data } = await supabase
-          .from("artifacts")
-          .select("id, title, type, status")
-          .in("id", artifactIds);
+      const evidenceIds = [
+        ...new Set(context.evidence.map((e) => e.sourceId)),
+      ];
+      const moduleIds = [
+        ...new Set(context.codebaseModules.map((m) => m.sourceId)),
+      ];
 
-        const map = new Map(data?.map((a) => [a.id, a]) ?? []);
+      const [artifactData, evidenceData, moduleData] = await Promise.all([
+        artifactIds.length > 0
+          ? supabase
+              .from("artifacts")
+              .select("id, title, type, status")
+              .in("id", artifactIds)
+              .then((r) => r.data)
+          : Promise.resolve(null),
+        evidenceIds.length > 0
+          ? supabase
+              .from("evidence")
+              .select("id, title, type, source, tags, content")
+              .in("id", evidenceIds)
+              .then((r) => r.data)
+          : Promise.resolve(null),
+        moduleIds.length > 0
+          ? supabase
+              .from("codebase_modules")
+              .select(
+                "id, file_path, module_name, module_type, language, summary, raw_content"
+              )
+              .in("id", moduleIds)
+              .then((r) => r.data)
+          : Promise.resolve(null),
+      ]);
+
+      // Enrich artifacts
+      if (artifactData) {
+        const map = new Map(artifactData.map((a) => [a.id, a]));
         for (const r of context.artifacts) {
           const meta = map.get(r.sourceId);
           if (meta) {
@@ -46,17 +75,9 @@ export async function POST(request: NextRequest) {
         }
       }
 
-      // Enrich evidence with source, tags, and full content
-      const evidenceIds = [
-        ...new Set(context.evidence.map((e) => e.sourceId)),
-      ];
-      if (evidenceIds.length > 0) {
-        const { data } = await supabase
-          .from("evidence")
-          .select("id, title, type, source, tags, content")
-          .in("id", evidenceIds);
-
-        const map = new Map(data?.map((e) => [e.id, e]) ?? []);
+      // Enrich evidence
+      if (evidenceData) {
+        const map = new Map(evidenceData.map((e) => [e.id, e]));
         for (const r of context.evidence) {
           const meta = map.get(r.sourceId);
           if (meta) {
@@ -72,19 +93,9 @@ export async function POST(request: NextRequest) {
         }
       }
 
-      // Enrich codebase modules with module metadata and raw_content
-      const moduleIds = [
-        ...new Set(context.codebaseModules.map((m) => m.sourceId)),
-      ];
-      if (moduleIds.length > 0) {
-        const { data } = await supabase
-          .from("codebase_modules")
-          .select(
-            "id, file_path, module_name, module_type, language, summary, raw_content"
-          )
-          .in("id", moduleIds);
-
-        const map = new Map(data?.map((m) => [m.id, m]) ?? []);
+      // Enrich codebase modules
+      if (moduleData) {
+        const map = new Map(moduleData.map((m) => [m.id, m]));
         for (const r of context.codebaseModules) {
           const meta = map.get(r.sourceId);
           if (meta) {

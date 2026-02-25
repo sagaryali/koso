@@ -262,7 +262,7 @@ export function useFeasibility(
       if (debounceRef.current) clearTimeout(debounceRef.current);
       debounceRef.current = setTimeout(
         () => executeAssessment(sectionText, docTitle, docType),
-        3000
+        1500
       );
     },
     [executeAssessment]

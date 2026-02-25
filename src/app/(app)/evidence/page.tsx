@@ -1,7 +1,18 @@
 "use client";
 
 import { useState, useEffect, useRef, useCallback } from "react";
-import { Search, Plus, Link as LinkIcon, X, Pencil, Trash2 } from "lucide-react";
+import { useSearchParams } from "next/navigation";
+import {
+  Search,
+  Plus,
+  Link as LinkIcon,
+  X,
+  Pencil,
+  Trash2,
+  FileText,
+  Image as ImageIcon,
+  Download,
+} from "lucide-react";
 import {
   Button,
   Badge,
@@ -20,10 +31,11 @@ import { useTourTrigger } from "@/hooks/use-tour-trigger";
 import { EVIDENCE_TOUR } from "@/lib/tours";
 import type { Evidence, EvidenceType } from "@/types";
 
-type FilterType = "all" | EvidenceType;
+type FilterType = "all" | "unlinked" | EvidenceType;
 
 const FILTERS: { label: string; value: FilterType }[] = [
   { label: "All", value: "all" },
+  { label: "Unlinked", value: "unlinked" },
   { label: "Feedback", value: "feedback" },
   { label: "Metric", value: "metric" },
   { label: "Research", value: "research" },
@@ -67,8 +79,11 @@ export default function EvidencePage() {
 
   useTourTrigger("evidence", EVIDENCE_TOUR, 800);
 
+  const searchParams = useSearchParams();
   const [loading, setLoading] = useState(true);
-  const [filter, setFilter] = useState<FilterType>("all");
+  const [filter, setFilter] = useState<FilterType>(
+    (searchParams.get("filter") as FilterType) || "all"
+  );
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<EvidenceWithLinks[] | null>(null);
   const [searching, setSearching] = useState(false);
@@ -254,7 +269,11 @@ export default function EvidencePage() {
   const filteredList =
     filter === "all"
       ? displayList
-      : displayList.filter((e) => e.type === filter);
+      : filter === "unlinked"
+        ? displayList.filter(
+            (e) => !e.linkedArtifacts || e.linkedArtifacts.length === 0
+          )
+        : displayList.filter((e) => e.type === filter);
 
   // Handle evidence creation
   function handleEvidenceCreated() {
@@ -450,6 +469,17 @@ export default function EvidencePage() {
                   <Badge className="text-[11px]">
                     {formatType(item.type)}
                   </Badge>
+                  {item.file_type && (
+                    <Icon
+                      icon={
+                        item.file_type.startsWith("image/")
+                          ? ImageIcon
+                          : FileText
+                      }
+                      size={14}
+                      className="shrink-0 text-text-tertiary"
+                    />
+                  )}
                   <span className="truncate text-sm font-medium">
                     {item.title}
                   </span>
@@ -481,12 +511,18 @@ export default function EvidencePage() {
                 <div className="text-xs text-text-tertiary">
                   {formatDate(item.created_at)}
                 </div>
-                {item.linkedArtifacts && item.linkedArtifacts.length > 0 && (
+                {item.linkedArtifacts && item.linkedArtifacts.length > 0 ? (
                   <div className="mt-1.5 flex items-center gap-1 text-[11px] text-text-tertiary">
                     <Icon icon={LinkIcon} size={11} />
                     <span className="max-w-[140px] truncate">
-                      {item.linkedArtifacts[0].title}
+                      {item.linkedArtifacts.length === 1
+                        ? item.linkedArtifacts[0].title
+                        : `${item.linkedArtifacts.length} specs`}
                     </span>
+                  </div>
+                ) : (
+                  <div className="mt-1.5 text-[11px] text-text-tertiary">
+                    Unlinked
                   </div>
                 )}
               </div>
@@ -557,6 +593,35 @@ export default function EvidencePage() {
                     </h3>
                   </div>
                 </div>
+
+                {/* File preview */}
+                {detailEvidence.file_url && (
+                  <div>
+                    {detailEvidence.file_type?.startsWith("image/") ? (
+                      <img
+                        src={detailEvidence.file_url}
+                        alt={detailEvidence.file_name ?? "Evidence file"}
+                        className="max-h-[300px] border border-border-default object-contain"
+                      />
+                    ) : (
+                      <div className="flex items-center gap-2 border border-border-default p-3">
+                        <Icon icon={FileText} className="text-text-tertiary" />
+                        <span className="flex-1 truncate text-sm">
+                          {detailEvidence.file_name}
+                        </span>
+                        <a
+                          href={detailEvidence.file_url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="flex items-center gap-1 text-xs text-text-secondary hover:text-text-primary"
+                        >
+                          <Icon icon={Download} size={14} />
+                          Download
+                        </a>
+                      </div>
+                    )}
+                  </div>
+                )}
 
                 {/* Content */}
                 <p

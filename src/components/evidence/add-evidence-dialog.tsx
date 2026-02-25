@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef, useCallback } from "react";
-import { X } from "lucide-react";
+import { X, Upload, FileText, Image as ImageIcon } from "lucide-react";
 import { Button, Input, TextArea, Badge, Dialog } from "@/components/ui";
 import { toast } from "@/components/ui/toast";
 import { Icon } from "@/components/ui/icon";
@@ -18,7 +18,15 @@ const EVIDENCE_TYPES: { label: string; value: EvidenceType }[] = [
   { label: "Meeting Note", value: "meeting_note" },
 ];
 
-type Mode = "single" | "bulk";
+type Mode = "single" | "bulk" | "file";
+
+const ACCEPTED_FILE_TYPES = "image/png,image/jpeg,image/gif,image/webp,application/pdf,text/csv,text/plain";
+
+function formatFileSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
 
 interface AddEvidenceDialogProps {
   open: boolean;
@@ -54,6 +62,12 @@ export function AddEvidenceDialog({
   const [bulkItems, setBulkItems] = useState<FeedbackItem[]>([]);
   const [bulkParsed, setBulkParsed] = useState(false);
 
+  // File mode state
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [fileUploading, setFileUploading] = useState(false);
+  const [fileExtractedText, setFileExtractedText] = useState("");
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
   const supabase = createClient();
   const tagInputRef = useRef<HTMLInputElement>(null);
 
@@ -70,6 +84,9 @@ export function AddEvidenceDialog({
       setBulkRaw("");
       setBulkItems([]);
       setBulkParsed(false);
+      setSelectedFile(null);
+      setFileUploading(false);
+      setFileExtractedText("");
     }
   }, [open, prefillContent, prefillSource]);
 
@@ -145,14 +162,16 @@ export function AddEvidenceDialog({
       return;
     }
 
-    // Fire-and-forget: embed this evidence
-    fetch("/api/embeddings/index", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ sourceId: data.id, sourceType: "evidence" }),
-    }).catch((err) =>
-      console.log("[embeddings] Background indexing failed:", err)
-    );
+    // Embed this evidence, then check for similar artifacts
+    try {
+      await fetch("/api/embeddings/index", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sourceId: data.id, sourceType: "evidence" }),
+      });
+    } catch (err) {
+      console.log("[embeddings] Background indexing failed:", err);
+    }
 
     // Fire-and-forget: trigger cluster recomputation
     fetch("/api/clusters/compute", {
@@ -161,64 +180,172 @@ export function AddEvidenceDialog({
       body: JSON.stringify({ workspaceId }),
     }).catch(() => {});
 
-    // Check for similar artifacts
-    checkSimilarArtifacts(data.id, content.trim());
+    // Auto-link to similar artifacts (embedding is now ready)
+    try {
+      const linkRes = await fetch("/api/links/auto", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          sourceId: data.id,
+          sourceType: "evidence",
+          workspaceId,
+        }),
+      });
+
+      if (linkRes.ok) {
+        const { linksCreated } = await linkRes.json();
+        if (linksCreated > 0) {
+          toast({
+            message: `Added to evidence pool. Linked to ${linksCreated} spec${linksCreated !== 1 ? "s" : ""}.`,
+          });
+        } else {
+          toast({ message: "Added to evidence pool" });
+        }
+      } else {
+        toast({ message: "Added to evidence pool" });
+      }
+    } catch {
+      toast({ message: "Added to evidence pool" });
+    }
 
     setSaving(false);
     onCreated?.(data.id);
     onClose();
   }
 
-  async function checkSimilarArtifacts(evidenceId: string, text: string) {
-    try {
-      // Wait briefly for the embedding to be created
-      await new Promise((r) => setTimeout(r, 2000));
+  // ── File mode save ─────────────────────────────────────────────
+  async function handleFileSave() {
+    if (!selectedFile) return;
+    setFileUploading(true);
 
-      const res = await fetch("/api/search", {
+    try {
+      // Upload file to Supabase Storage
+      const fileExt = selectedFile.name.split(".").pop();
+      const filePath = `${workspaceId}/${crypto.randomUUID()}.${fileExt}`;
+
+      const { error: uploadError } = await supabase.storage
+        .from("evidence-files")
+        .upload(filePath, selectedFile);
+
+      if (uploadError) {
+        toast({ message: "File upload failed" });
+        setFileUploading(false);
+        return;
+      }
+
+      // Get public URL
+      const { data: urlData } = supabase.storage
+        .from("evidence-files")
+        .getPublicUrl(filePath);
+
+      const fileUrl = urlData.publicUrl;
+
+      // Extract text from file
+      let extractedText = "";
+      let fileContent = "";
+
+      // For text/csv files, read content directly
+      if (
+        selectedFile.type === "text/plain" ||
+        selectedFile.type === "text/csv"
+      ) {
+        fileContent = await selectedFile.text();
+      }
+
+      const extractRes = await fetch("/api/evidence/extract-text", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          query: text.slice(0, 500),
-          workspaceId,
-          sourceTypes: ["artifact"],
-          limit: 3,
+          fileUrl,
+          fileType: selectedFile.type,
+          fileContent,
         }),
       });
 
-      if (!res.ok) return;
-      const { results } = await res.json();
-
-      if (results && results.length > 0) {
-        const topMatch = results[0];
-        if (topMatch.similarity > 0.8) {
-          const artifactTitle =
-            (topMatch.metadata?.title as string) || "an artifact";
-
-          toast({
-            message: `This seems related to "${artifactTitle}"`,
-            action: {
-              label: "Link it",
-              onClick: () => linkEvidence(evidenceId, topMatch.sourceId),
-            },
-            duration: 8000,
-          });
-        }
+      if (extractRes.ok) {
+        const { extractedText: text } = await extractRes.json();
+        extractedText = text;
       }
-    } catch {
-      // Silent fail — similarity check is optional
-    }
-  }
 
-  async function linkEvidence(evidenceId: string, artifactId: string) {
-    await supabase.from("links").insert({
-      workspace_id: workspaceId,
-      source_id: evidenceId,
-      source_type: "evidence",
-      target_id: artifactId,
-      target_type: "artifact",
-      relationship: "related_to",
-    });
-    toast({ message: "Linked successfully" });
+      setFileExtractedText(extractedText);
+
+      // Create evidence record
+      const evidenceTitle =
+        title.trim() || selectedFile.name.replace(/\.[^.]+$/, "");
+      const evidenceContent = extractedText || `[File: ${selectedFile.name}]`;
+
+      const { data, error } = await supabase
+        .from("evidence")
+        .insert({
+          workspace_id: workspaceId,
+          type,
+          title: evidenceTitle,
+          content: evidenceContent,
+          source: source.trim() || null,
+          tags,
+          file_url: fileUrl,
+          file_name: selectedFile.name,
+          file_type: selectedFile.type,
+          file_size: selectedFile.size,
+          extracted_text: extractedText || null,
+        })
+        .select("id")
+        .single();
+
+      if (error || !data) {
+        toast({ message: "Failed to save evidence" });
+        setFileUploading(false);
+        return;
+      }
+
+      // Embed the evidence
+      try {
+        await fetch("/api/embeddings/index", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ sourceId: data.id, sourceType: "evidence" }),
+        });
+      } catch {
+        // Silent fail
+      }
+
+      // Auto-link
+      try {
+        const linkRes = await fetch("/api/links/auto", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            sourceId: data.id,
+            sourceType: "evidence",
+            workspaceId,
+          }),
+        });
+
+        if (linkRes.ok) {
+          const { linksCreated } = await linkRes.json();
+          if (linksCreated > 0) {
+            toast({
+              message: `File uploaded. Linked to ${linksCreated} spec${linksCreated !== 1 ? "s" : ""}.`,
+            });
+          } else {
+            toast({ message: "File uploaded to evidence pool" });
+          }
+        } else {
+          toast({ message: "File uploaded to evidence pool" });
+        }
+      } catch {
+        toast({ message: "File uploaded to evidence pool" });
+      }
+
+      setFileUploading(false);
+      setSaving(false);
+      onCreated?.(data.id);
+      onClose();
+    } catch (err) {
+      console.error("[evidence] File upload failed:", err);
+      toast({ message: "Failed to process file" });
+      setFileUploading(false);
+    }
   }
 
   // ── Bulk mode handlers ──────────────────────────────────────────
@@ -335,7 +462,7 @@ export function AddEvidenceDialog({
         {/* Mode toggle (hidden in mini mode) */}
         {!mini && (
           <div className="flex border border-border-default">
-            {(["single", "bulk"] as const).map((m, i) => (
+            {(["single", "bulk", "file"] as const).map((m, i) => (
               <button
                 key={m}
                 onClick={() => setMode(m)}
@@ -347,7 +474,7 @@ export function AddEvidenceDialog({
                     : "bg-bg-primary text-text-primary hover:bg-bg-hover"
                 )}
               >
-                {m === "single" ? "Single" : "Bulk Import"}
+                {m === "single" ? "Single" : m === "bulk" ? "Bulk Import" : "File"}
               </button>
             ))}
           </div>
@@ -454,6 +581,105 @@ export function AddEvidenceDialog({
                 disabled={!content.trim() || saving}
               >
                 {saving ? "Saving..." : "Save Evidence"}
+              </Button>
+            </div>
+          </>
+        )}
+
+        {/* ── File mode ──────────────────────────────────────── */}
+        {mode === "file" && (
+          <>
+            <div>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept={ACCEPTED_FILE_TYPES}
+                className="hidden"
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (file) {
+                    setSelectedFile(file);
+                    setFileExtractedText("");
+                  }
+                }}
+              />
+              {!selectedFile ? (
+                <button
+                  onClick={() => fileInputRef.current?.click()}
+                  className="flex w-full cursor-pointer flex-col items-center gap-3 border-2 border-dashed border-border-default px-6 py-10 hover:border-border-strong"
+                >
+                  <Icon icon={Upload} className="text-text-tertiary" />
+                  <div className="text-center">
+                    <p className="text-sm font-medium text-text-primary">
+                      Click to upload a file
+                    </p>
+                    <p className="mt-1 text-xs text-text-tertiary">
+                      Images, PDFs, CSVs, or text files (up to 50MB)
+                    </p>
+                  </div>
+                </button>
+              ) : (
+                <div className="flex items-center gap-3 border border-border-default p-4">
+                  <Icon
+                    icon={
+                      selectedFile.type.startsWith("image/")
+                        ? ImageIcon
+                        : FileText
+                    }
+                    className="shrink-0 text-text-tertiary"
+                  />
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-medium">
+                      {selectedFile.name}
+                    </p>
+                    <p className="text-xs text-text-tertiary">
+                      {formatFileSize(selectedFile.size)}
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => {
+                      setSelectedFile(null);
+                      setFileExtractedText("");
+                      if (fileInputRef.current) fileInputRef.current.value = "";
+                    }}
+                    className="cursor-pointer text-text-tertiary hover:text-text-primary"
+                  >
+                    <Icon icon={X} size={16} />
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {selectedFile && (
+              <>
+                <Input
+                  label="Title"
+                  placeholder="Brief title for this evidence"
+                  value={title || selectedFile.name.replace(/\.[^.]+$/, "")}
+                  onChange={(e) => setTitle(e.target.value)}
+                />
+                <Input
+                  label="Source (optional)"
+                  placeholder="e.g., Customer screenshot, PDF report"
+                  value={source}
+                  onChange={(e) => setSource(e.target.value)}
+                />
+              </>
+            )}
+
+            <div className="flex justify-end gap-3 pt-2">
+              <Button variant="secondary" onClick={onClose}>
+                Cancel
+              </Button>
+              <Button
+                onClick={handleFileSave}
+                disabled={!selectedFile || saving || fileUploading}
+              >
+                {fileUploading
+                  ? "Processing..."
+                  : saving
+                    ? "Saving..."
+                    : "Upload & Save"}
               </Button>
             </div>
           </>

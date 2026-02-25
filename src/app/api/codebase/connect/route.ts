@@ -1,4 +1,5 @@
 import { type NextRequest, NextResponse } from "next/server";
+import { after } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { indexRepository } from "@/lib/codebase/index";
 import { getAuthenticatedWorkspace } from "@/lib/api/get-workspace";
@@ -31,16 +32,17 @@ export async function POST(request: NextRequest) {
 
   const admin = createAdminClient();
 
-  // Check if already connected
+  // Check if this specific repo is already connected
   const { data: existing } = await admin
     .from("codebase_connections")
     .select("id")
     .eq("workspace_id", workspace.id)
+    .eq("repo_name", repoFullName)
     .single();
 
   if (existing) {
     return NextResponse.json(
-      { error: "A repository is already connected. Disconnect first." },
+      { error: "This repository is already connected." },
       { status: 409 }
     );
   }
@@ -66,10 +68,14 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  // Fire-and-forget indexing
-  indexRepository(connection.id, workspace.id, workspace.github_token).catch(
-    (err) => console.error("[codebase/connect] Background indexing failed:", err)
-  );
+  // Run indexing after response is sent, tracked by Vercel runtime
+  after(async () => {
+    try {
+      await indexRepository(connection.id, workspace.id, workspace.github_token!);
+    } catch (err) {
+      console.error("[codebase/connect] Background indexing failed:", err);
+    }
+  });
 
   return NextResponse.json({ connection });
 }

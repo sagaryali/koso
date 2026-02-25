@@ -53,7 +53,7 @@ export async function POST(request: NextRequest) {
     } else if (sourceType === "evidence") {
       const { data, error } = await supabase
         .from("evidence")
-        .select("content, workspace_id")
+        .select("content, extracted_text, workspace_id")
         .eq("id", sourceId)
         .single();
 
@@ -63,7 +63,7 @@ export async function POST(request: NextRequest) {
           { status: 404 }
         );
       }
-      content = data.content;
+      content = data.extracted_text || data.content;
       workspaceId = data.workspace_id;
     } else {
       const { data, error } = await supabase

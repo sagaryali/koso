@@ -5,6 +5,7 @@ import type { CodebaseConnection } from "@/types";
 
 interface CodebaseStatus {
   connection: CodebaseConnection | null;
+  connections: CodebaseConnection[];
   githubUsername: string | null;
   loading: boolean;
   error: string | null;
@@ -13,6 +14,7 @@ interface CodebaseStatus {
 
 export function useCodebaseStatus(pollWhileSyncing = true): CodebaseStatus {
   const [connection, setConnection] = useState<CodebaseConnection | null>(null);
+  const [connections, setConnections] = useState<CodebaseConnection[]>([]);
   const [githubUsername, setGithubUsername] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -23,6 +25,7 @@ export function useCodebaseStatus(pollWhileSyncing = true): CodebaseStatus {
       if (!res.ok) throw new Error("Failed to fetch status");
       const data = await res.json();
       setConnection(data.connection);
+      setConnections(data.connections ?? []);
       setGithubUsername(data.githubUsername);
       setError(null);
     } catch (err) {
@@ -36,18 +39,21 @@ export function useCodebaseStatus(pollWhileSyncing = true): CodebaseStatus {
     fetchStatus();
   }, [fetchStatus]);
 
-  // Poll while syncing
+  // Poll while any connection is syncing
   useEffect(() => {
     if (!pollWhileSyncing) return;
-    if (connection?.status !== "syncing" && connection?.status !== "pending")
-      return;
+    const anySyncing = connections.some(
+      (c) => c.status === "syncing" || c.status === "pending"
+    );
+    if (!anySyncing) return;
 
     const interval = setInterval(fetchStatus, 3000);
     return () => clearInterval(interval);
-  }, [connection?.status, pollWhileSyncing, fetchStatus]);
+  }, [connections, pollWhileSyncing, fetchStatus]);
 
   return {
     connection,
+    connections,
     githubUsername,
     loading,
     error,

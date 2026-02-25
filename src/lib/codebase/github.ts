@@ -101,6 +101,9 @@ export async function fetchFileContent(
 
 const SUPPORTED_EXTENSIONS = new Set([
   ".ts", ".tsx", ".js", ".jsx", ".py", ".go",
+  ".rb", ".java", ".kt", ".kts", ".swift", ".rs",
+  ".cs", ".c", ".h", ".cpp", ".hpp", ".cc", ".cxx",
+  ".php",
 ]);
 
 const SKIP_DIRS = new Set([
@@ -149,6 +152,29 @@ export function detectLanguage(path: string): string | null {
       return "python";
     case "go":
       return "go";
+    case "rb":
+      return "ruby";
+    case "java":
+      return "java";
+    case "kt":
+    case "kts":
+      return "kotlin";
+    case "swift":
+      return "swift";
+    case "rs":
+      return "rust";
+    case "cs":
+      return "csharp";
+    case "c":
+    case "h":
+      return "c";
+    case "cpp":
+    case "hpp":
+    case "cc":
+    case "cxx":
+      return "cpp";
+    case "php":
+      return "php";
     default:
       return null;
   }
@@ -159,12 +185,17 @@ export function detectModuleType(
 ): "component" | "service" | "model" | "route" | "utility" | "config" | "test" | null {
   const lower = path.toLowerCase();
 
-  if (/\.(test|spec)\.(ts|tsx|js|jsx|py|go)$/.test(lower)) return "test";
-  if (lower.includes("/components/") || lower.includes("/component/")) return "component";
+  if (/\.(test|spec)\.(ts|tsx|js|jsx|py|go|rb|java|kt|swift|rs|cs|cpp|php)$/.test(lower)) return "test";
+  // Language-specific test patterns
+  if (lower.includes("/test/") || lower.includes("/tests/") || lower.includes("/__tests__/")) return "test";
+  if (lower.endsWith("_test.go") || lower.endsWith("_test.rb") || lower.endsWith("_spec.rb")) return "test";
+  if (/test\.java$/.test(lower) || /test\.kt$/.test(lower)) return "test";
+
+  if (lower.includes("/components/") || lower.includes("/component/") || lower.includes("/views/") || lower.includes("/view/")) return "component";
   if (lower.includes("/services/") || lower.includes("/service/") || lower.includes("/lib/")) return "service";
-  if (lower.includes("/models/") || lower.includes("/types/") || lower.includes("/schemas/") || lower.includes("/schema/")) return "model";
-  if (lower.includes("/routes/") || lower.includes("/api/") || lower.includes("/pages/") || lower.includes("/app/")) return "route";
-  if (lower.includes("/utils/") || lower.includes("/helpers/") || lower.includes("/util/")) return "utility";
+  if (lower.includes("/models/") || lower.includes("/types/") || lower.includes("/schemas/") || lower.includes("/schema/") || lower.includes("/entities/") || lower.includes("/entity/")) return "model";
+  if (lower.includes("/routes/") || lower.includes("/api/") || lower.includes("/pages/") || lower.includes("/app/") || lower.includes("/controllers/") || lower.includes("/controller/")) return "route";
+  if (lower.includes("/utils/") || lower.includes("/helpers/") || lower.includes("/util/") || lower.includes("/support/")) return "utility";
   if (lower.includes("/config/") || lower.includes("/configuration/")) return "config";
 
   return null;
