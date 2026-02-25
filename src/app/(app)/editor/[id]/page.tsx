@@ -139,6 +139,7 @@ export default function EditorPage() {
     nudges: evidenceNudges,
     loading: evidenceNudgesLoading,
     triggerNudges,
+    triggerNudgesImmediate,
   } = useEvidenceNudges(artifact?.workspace_id ?? "");
 
   const handleTextChange = useCallback(
@@ -153,6 +154,13 @@ export default function EditorPage() {
       }
     },
     [triggerSearch, triggerMarketSearch, triggerNudges, triggerAssessment, hasCodebase, artifact, title]
+  );
+
+  const handleSectionChange = useCallback(
+    (sectionText: string, sectionName: string | null) => {
+      triggerNudgesImmediate(sectionText, sectionName);
+    },
+    [triggerNudgesImmediate]
   );
 
   const handleEditorReady = useCallback(
@@ -536,6 +544,7 @@ export default function EditorPage() {
               onSave={handleContentSave}
               onSaveStatusChange={setSaveStatus}
               onTextChange={handleTextChange}
+              onSectionChange={handleSectionChange}
               onReady={handleEditorReady}
               onEditorInstance={handleEditorInstance}
               inlineNudges={evidenceNudges}

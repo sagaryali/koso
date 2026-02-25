@@ -73,6 +73,7 @@ export function useEvidenceNudges(workspaceId: string) {
     [workspaceId]
   );
 
+  // Debounced trigger — for typing within a section
   const triggerNudges = useCallback(
     (sectionText: string, sectionName: string | null) => {
       if (debounceRef.current) clearTimeout(debounceRef.current);
@@ -84,6 +85,16 @@ export function useEvidenceNudges(workspaceId: string) {
     [executeSearch]
   );
 
+  // Immediate trigger — for section navigation (clear stale nudges first)
+  const triggerNudgesImmediate = useCallback(
+    (sectionText: string, sectionName: string | null) => {
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+      setNudges([]);
+      executeSearch(sectionText, sectionName);
+    },
+    [executeSearch]
+  );
+
   useEffect(() => {
     return () => {
       if (debounceRef.current) clearTimeout(debounceRef.current);
@@ -91,5 +102,5 @@ export function useEvidenceNudges(workspaceId: string) {
     };
   }, []);
 
-  return { nudges, loading, triggerNudges };
+  return { nudges, loading, triggerNudges, triggerNudgesImmediate };
 }

@@ -18,6 +18,7 @@ interface TiptapEditorProps {
   onSave: (content: Record<string, unknown>) => void;
   onSaveStatusChange: (status: "saving" | "saved" | "idle") => void;
   onTextChange?: (sectionText: string, sectionName: string | null) => void;
+  onSectionChange?: (sectionText: string, sectionName: string | null) => void;
   onReady?: (fullText: string) => void;
   onEditorInstance?: (editor: Editor) => void;
   inlineNudges?: EvidenceNudge[];
@@ -84,6 +85,7 @@ export function TiptapEditor({
   onSave,
   onSaveStatusChange,
   onTextChange,
+  onSectionChange,
   onReady,
   onEditorInstance,
   inlineNudges,
@@ -92,6 +94,7 @@ export function TiptapEditor({
   const contentInitialized = useRef(false);
   const initializingRef = useRef(false);
   const onTextChangeRef = useRef(onTextChange);
+  const onSectionChangeRef = useRef(onSectionChange);
   const onReadyRef = useRef(onReady);
   const onEditorInstanceRef = useRef(onEditorInstance);
   const lastSectionNameRef = useRef<string | null>(null);
@@ -103,6 +106,10 @@ export function TiptapEditor({
   useEffect(() => {
     onTextChangeRef.current = onTextChange;
   }, [onTextChange]);
+
+  useEffect(() => {
+    onSectionChangeRef.current = onSectionChange;
+  }, [onSectionChange]);
 
   useEffect(() => {
     onReadyRef.current = onReady;
@@ -178,12 +185,12 @@ export function TiptapEditor({
       setCurrentSectionName(sectionName);
       setSectionThin(isSectionThin(editor));
 
-      // Only fire onTextChange when cursor moves to a different section
+      // When cursor moves to a different section, fire immediate nudge refresh
       if (sectionName !== lastSectionNameRef.current) {
         lastSectionNameRef.current = sectionName;
-        if (onTextChangeRef.current) {
-          const sectionText = extractCurrentSection(editor);
-          onTextChangeRef.current(sectionText, sectionName);
+        const sectionText = extractCurrentSection(editor);
+        if (onSectionChangeRef.current) {
+          onSectionChangeRef.current(sectionText, sectionName);
         }
       }
     },
