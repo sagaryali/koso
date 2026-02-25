@@ -14,10 +14,12 @@ import {
   Plus,
   File,
   LogOut,
+  MoreVertical,
 } from "lucide-react";
 import { Button, Icon, KosoMark } from "@/components/ui";
 import { DropdownMenu } from "@/components/ui/dropdown-menu";
 import { NewSpecDialog } from "@/components/new-spec-dialog";
+import { toast } from "@/components/ui/toast";
 import { cn } from "@/lib/utils";
 import { createClient } from "@/lib/supabase/client";
 import {
@@ -88,6 +90,20 @@ export function AppSidebar({
   function handleNewSpec() {
     if (!workspace) return;
     setNewSpecOpen(true);
+  }
+
+  async function handleDeleteSpec(specId: string) {
+    const spec = specs.find((s) => s.id === specId);
+    await supabase.from("artifacts").delete().eq("id", specId);
+    setSpecs((prev) => prev.filter((s) => s.id !== specId));
+
+    if (pathname === `/editor/${specId}`) {
+      router.push("/home");
+    }
+
+    toast({
+      message: `Deleted "${spec?.title || "Untitled"}"`,
+    });
   }
 
   function handleSwitchWorkspace(workspaceId: string) {
@@ -224,17 +240,35 @@ export function AppSidebar({
               {specs.map((spec) => {
                 const isActive = pathname === `/editor/${spec.id}`;
                 return (
-                  <button
+                  <div
                     key={spec.id}
-                    onClick={() => router.push(`/editor/${spec.id}`)}
                     className={cn(
-                      "flex w-full items-center gap-2 px-2 py-1.5 text-sm font-normal transition-none cursor-pointer",
+                      "group flex w-full items-center gap-2 px-2 py-1.5 text-sm font-normal transition-none",
                       isActive ? "bg-bg-hover" : "hover:bg-bg-hover"
                     )}
                   >
-                    <Icon icon={File} className="text-text-tertiary" />
-                    <span className="truncate">{spec.title}</span>
-                  </button>
+                    <button
+                      onClick={() => router.push(`/editor/${spec.id}`)}
+                      className="flex min-w-0 flex-1 cursor-pointer items-center gap-2"
+                    >
+                      <Icon icon={File} className="shrink-0 text-text-tertiary" />
+                      <span className="truncate">{spec.title}</span>
+                    </button>
+                    <DropdownMenu
+                      align="right"
+                      trigger={
+                        <div className="flex h-6 w-6 shrink-0 cursor-pointer items-center justify-center opacity-0 transition-none group-hover:opacity-100">
+                          <Icon icon={MoreVertical} size={14} className="text-text-tertiary" />
+                        </div>
+                      }
+                      items={[
+                        {
+                          label: "Delete",
+                          onClick: () => handleDeleteSpec(spec.id),
+                        },
+                      ]}
+                    />
+                  </div>
                 );
               })}
             </div>
