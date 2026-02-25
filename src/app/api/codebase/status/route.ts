@@ -21,7 +21,12 @@ export async function GET() {
     .eq("workspace_id", workspace.id)
     .order("created_at", { ascending: true });
 
-  console.log("[codebase/status] workspace_id:", workspace.id, "connections:", connections?.length ?? 0, "error:", connError?.message ?? "none");
+  // Also check if there are connections on ANY workspace (debug workspace mismatch)
+  const { data: allConns } = await admin
+    .from("codebase_connections")
+    .select("id, workspace_id, repo_name, status");
+
+  console.log("[codebase/status] active_workspace:", workspace.id, "found:", connections?.length ?? 0, "error:", connError?.message ?? "none", "all_connections:", JSON.stringify(allConns?.map(c => ({ ws: c.workspace_id, repo: c.repo_name })) ?? []));
 
   const allConnections = connections ?? [];
 
@@ -29,5 +34,11 @@ export async function GET() {
     connection: allConnections.length > 0 ? allConnections[0] : null,
     connections: allConnections,
     githubUsername: workspace.github_username,
+    _debug: {
+      workspaceId: workspace.id,
+      totalConnectionsAcrossAllWorkspaces: allConns?.length ?? 0,
+      connectionsForThisWorkspace: connections?.length ?? 0,
+      allConnectionWorkspaces: allConns?.map(c => ({ ws: c.workspace_id, repo: c.repo_name })) ?? [],
+    },
   });
 }
