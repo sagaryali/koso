@@ -11,6 +11,7 @@ import { useWorkspace } from "@/lib/workspace-context";
 import { useCodebaseStatus } from "@/hooks/use-codebase-status";
 import { useTourTrigger } from "@/hooks/use-tour-trigger";
 import { HOME_TOUR } from "@/lib/tours";
+import { NewSpecDialog } from "@/components/new-spec-dialog";
 import type { Artifact, Evidence, EvidenceType } from "@/types";
 
 function getGreeting() {
@@ -113,6 +114,7 @@ export default function HomePage() {
   const [codebaseJustReady, setCodebaseJustReady] = useState(false);
 
   const [checklistDismissed, setChecklistDismissed] = useState(true); // default true to avoid flash
+  const [newSpecOpen, setNewSpecOpen] = useState(false);
 
   useEffect(() => {
     document.title = "Koso — Home";
@@ -482,25 +484,10 @@ export default function HomePage() {
     }
   }
 
-  // ── Create blank spec (from checklist) ────────────────────────
-  async function handleCreateSpec() {
+  // ── Create spec (from checklist) ──────────────────────────────
+  function handleCreateSpec() {
     if (!workspace) return;
-
-    const { data } = await supabase
-      .from("artifacts")
-      .insert({
-        workspace_id: workspace.id,
-        type: "prd",
-        title: "Untitled",
-        content: { type: "doc", content: [{ type: "paragraph" }] },
-        status: "draft",
-      })
-      .select("id")
-      .single();
-
-    if (data) {
-      router.push(`/editor/${data.id}`);
-    }
+    setNewSpecOpen(true);
   }
 
   // ── Derived: subtitle ──────────────────────────────────────────
@@ -807,6 +794,14 @@ export default function HomePage() {
           </div>
         )}
       </div>
+
+      {workspace && (
+        <NewSpecDialog
+          open={newSpecOpen}
+          onClose={() => setNewSpecOpen(false)}
+          workspaceId={workspace.id}
+        />
+      )}
     </div>
   );
 }

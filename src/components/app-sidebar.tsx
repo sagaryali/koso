@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 import { Button, Icon, KosoMark } from "@/components/ui";
 import { DropdownMenu } from "@/components/ui/dropdown-menu";
+import { NewSpecDialog } from "@/components/new-spec-dialog";
 import { cn } from "@/lib/utils";
 import { createClient } from "@/lib/supabase/client";
 import {
@@ -55,6 +56,7 @@ export function AppSidebar({
   const collapsed = controlledCollapsed ?? internalCollapsed;
   const toggleCollapsed = onToggleCollapsed ?? (() => setInternalCollapsed((prev) => !prev));
   const [specs, setSpecs] = useState<Artifact[]>([]);
+  const [newSpecOpen, setNewSpecOpen] = useState(false);
   const router = useRouter();
   const pathname = usePathname();
   const supabase = createClient();
@@ -83,25 +85,9 @@ export function AppSidebar({
     router.push("/login");
   }
 
-  async function handleNewSpec() {
+  function handleNewSpec() {
     if (!workspace) return;
-
-    const { data } = await supabase
-      .from("artifacts")
-      .insert({
-        workspace_id: workspace.id,
-        type: "prd",
-        title: "Untitled Spec",
-        content: {},
-        status: "draft",
-      })
-      .select()
-      .single();
-
-    if (data) {
-      setSpecs((prev) => [data, ...prev]);
-      router.push(`/editor/${data.id}`);
-    }
+    setNewSpecOpen(true);
   }
 
   function handleSwitchWorkspace(workspaceId: string) {
@@ -319,6 +305,16 @@ export function AppSidebar({
           </div>
         )}
       </div>
+      {workspace && (
+        <NewSpecDialog
+          open={newSpecOpen}
+          onClose={() => setNewSpecOpen(false)}
+          workspaceId={workspace.id}
+          onCreated={(spec) => {
+            setSpecs((prev) => [spec as Artifact, ...prev]);
+          }}
+        />
+      )}
     </aside>
   );
 }
