@@ -2,10 +2,12 @@ export type ContextStrategy =
   | "full_doc"
   | "full_doc_with_specs"
   | "evidence_search"
+  | "evidence_with_specs"
   | "doc_with_code"
   | "market_research"
   | "market_competitors"
   | "market_feasibility"
+  | "workspace_overview"
   | "all";
 
 export type OutputMode =
@@ -269,6 +271,141 @@ export const AI_ACTIONS: AIAction[] = [
       "Be honest and direct. Ground everything in the evidence provided.",
     contextStrategy: "market_feasibility",
     outputMode: "stream_with_insert",
+  },
+
+  // --- Thinking Partner Actions (Spec-level) ---
+
+  {
+    id: "whos_asking",
+    label: "Who's asking for this?",
+    description:
+      "Surface all related customer evidence, segment requestors, and identify urgency signals",
+    promptTemplate:
+      "Based on the specification and all customer evidence provided, answer: who is asking for this feature?\n\n" +
+      "Provide:\n" +
+      "1. Customer segments - Group the requestors by persona, company size, plan tier, or other relevant segments\n" +
+      "2. Urgency signals - Which requests mention deadlines, blockers, or churn risk? Quote specific language\n" +
+      "3. Request frequency - How many distinct customers or pieces of evidence mention this need?\n" +
+      "4. Key quotes - The most compelling 3-5 direct quotes that capture the demand\n" +
+      "5. Gaps - Are there segments you'd expect to want this but haven't heard from?\n\n" +
+      "Ground every observation in the actual evidence provided. Do not invent feedback.",
+    contextStrategy: "evidence_search",
+    outputMode: "stream",
+  },
+  {
+    id: "challenge_spec",
+    label: "Challenge this spec",
+    description:
+      "Critical review: unstated assumptions, evidence gaps, conflicts, and missing edge cases",
+    promptTemplate:
+      "Act as a senior PM and engineering lead reviewing this spec before it goes to development. Be direct and constructive.\n\n" +
+      "Provide a critical review covering:\n" +
+      "1. Unstated assumptions - What is this spec assuming that hasn't been validated? What could go wrong if those assumptions are false?\n" +
+      "2. Evidence gaps - What claims lack supporting customer evidence? Where is the spec speculating rather than building on data?\n" +
+      "3. Conflicts with other specs - Does this overlap, contradict, or create dependencies with existing specifications?\n" +
+      "4. Missing edge cases - What scenarios hasn't the author considered? What happens when things go wrong?\n" +
+      "5. Scope concerns - Is this trying to do too much? Too little? What would you cut or add?\n" +
+      "6. Success criteria - Are the success metrics clear, measurable, and actually tied to the stated goals?\n\n" +
+      "For each issue, rate its severity (HIGH / MEDIUM / LOW) and suggest how to address it.\n" +
+      "Be the pushback the PM needs before engineering starts building.",
+    contextStrategy: "evidence_with_specs",
+    outputMode: "stream",
+  },
+  {
+    id: "build_the_case",
+    label: "Build the case for this",
+    description:
+      "Compile a stakeholder-ready business case from evidence, market data, and strategic alignment",
+    promptTemplate:
+      "You are given a product specification, customer evidence, and market research.\n\n" +
+      "Compile a stakeholder-ready business case for this feature:\n\n" +
+      "1. Problem statement - What customer pain are we solving? Use evidence to quantify the impact\n" +
+      "2. Customer demand - How many customers are asking? What segments? Quote the strongest signals\n" +
+      "3. Market context - What are competitors doing? Is this table stakes or a differentiator?\n" +
+      "4. Strategic alignment - How does this fit the product's principles and direction?\n" +
+      "5. Risk of inaction - What happens if we don't build this? Churn risk, competitive disadvantage, opportunity cost\n" +
+      "6. Recommended scope - What's the minimum viable version that captures most of the value?\n\n" +
+      "Write this so a PM can present it directly to leadership. Be persuasive but honest — flag any weaknesses in the case.",
+    contextStrategy: "market_feasibility",
+    outputMode: "stream_with_insert",
+  },
+  {
+    id: "whats_missing",
+    label: "What's missing from this?",
+    description:
+      "Gap analysis: uncovered customer requests, missing patterns, and overlooked requirements",
+    promptTemplate:
+      "Compare this specification against the customer evidence and related specifications provided. Identify what's missing.\n\n" +
+      "Provide:\n" +
+      "1. Uncovered customer requests - Evidence items that mention needs this spec doesn't address\n" +
+      "2. Missing patterns - Requirements that peer specs include but this one lacks (error handling, accessibility, analytics, etc.)\n" +
+      "3. Unaddressed personas - User types mentioned in evidence who aren't served by this spec\n" +
+      "4. Integration gaps - Connections to other features or specs that should be mentioned\n" +
+      "5. Acceptance criteria gaps - Scenarios that need criteria but don't have them\n\n" +
+      "For each gap, explain why it matters and suggest how to address it.\n" +
+      "Focus on substantive gaps, not formatting nitpicks.",
+    contextStrategy: "evidence_with_specs",
+    outputMode: "stream",
+  },
+
+  // --- Thinking Partner Actions (Workspace-level) ---
+
+  {
+    id: "what_to_build_next",
+    label: "What should we build next?",
+    description:
+      "Portfolio-level prioritization using evidence themes, spec coverage, and product principles",
+    promptTemplate:
+      "You are given a workspace overview including all evidence clusters (pre-computed themes), all specification titles and statuses, and product principles.\n\n" +
+      "Provide a prioritized recommendation of what to build next:\n\n" +
+      "1. Top 3 opportunities - The highest-impact themes from evidence clusters that either have no spec coverage or inadequate spec coverage. For each:\n" +
+      "   - Theme and evidence volume\n" +
+      "   - Whether existing specs address it (and gaps if they do)\n" +
+      "   - Alignment with product principles\n" +
+      "   - Suggested scope for a first spec\n\n" +
+      "2. Existing specs to prioritize - Among specs already written, which should ship first based on evidence demand?\n\n" +
+      "3. Deprioritize - Any specs that lack evidence support and could be deferred\n\n" +
+      "Be opinionated. Rank by impact, not effort. Ground everything in the evidence and principles provided.",
+    contextStrategy: "workspace_overview",
+    outputMode: "stream",
+  },
+  {
+    id: "customer_struggles",
+    label: "What are customers struggling with?",
+    description:
+      "Synthesize all evidence into ranked pain points with severity and spec coverage",
+    promptTemplate:
+      "You are given a workspace overview including all evidence clusters, all specifications, and unlinked evidence.\n\n" +
+      "Synthesize a pain point report:\n\n" +
+      "1. Top pain points - Ranked by severity and frequency. For each:\n" +
+      "   - Pain point description\n" +
+      "   - Evidence volume (how many pieces of evidence mention this)\n" +
+      "   - Severity (blocking, frustrating, or minor)\n" +
+      "   - Addressed by spec? (which spec addresses it, if any, and how completely)\n\n" +
+      "2. Emerging patterns - Pain points with only 2-3 mentions that could grow into major themes\n\n" +
+      "3. Positive signals - What are customers happy about? What's working well?\n\n" +
+      "Ground every point in the actual evidence provided. Include specific examples where possible.",
+    contextStrategy: "workspace_overview",
+    outputMode: "stream",
+  },
+  {
+    id: "unaddressed_feedback",
+    label: "What feedback haven't we addressed?",
+    description:
+      "Find evidence not connected to any spec, group into themes, and suggest what could become new specs",
+    promptTemplate:
+      "You are given a workspace overview including unlinked evidence (not connected to any spec), evidence clusters, and all current specifications.\n\n" +
+      "Analyze the unaddressed feedback:\n\n" +
+      "1. Unlinked evidence themes - Group the unlinked evidence into themes. For each theme:\n" +
+      "   - Theme name and description\n" +
+      "   - Number of evidence items\n" +
+      "   - Representative examples (quote 2-3 specific items)\n" +
+      "   - Should this become a new spec? Why or why not?\n\n" +
+      "2. Coverage gaps - Evidence themes that exist in clusters but have no matching spec\n\n" +
+      "3. Recommended new specs - Your top 3 suggestions for new specifications based on unaddressed feedback, with a one-sentence scope for each\n\n" +
+      "Help the PM ensure nothing falls through the cracks.",
+    contextStrategy: "workspace_overview",
+    outputMode: "stream",
   },
 ];
 

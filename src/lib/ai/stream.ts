@@ -1,6 +1,7 @@
 export interface StreamOptions {
   system: string;
   user: string;
+  messages?: { role: string; content: string }[];
   model?: "sonnet" | "haiku";
   maxTokens?: number;
   onChunk: (text: string) => void;
@@ -12,6 +13,7 @@ export interface StreamOptions {
 export async function streamCompletion({
   system,
   user,
+  messages,
   model,
   maxTokens,
   onChunk,
@@ -20,10 +22,17 @@ export async function streamCompletion({
   signal,
 }: StreamOptions): Promise<void> {
   try {
+    const body: Record<string, unknown> = { system, model, maxTokens };
+    if (messages) {
+      body.messages = messages;
+    } else {
+      body.user = user;
+    }
+
     const res = await fetch("/api/ai", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ system, user, model, maxTokens }),
+      body: JSON.stringify(body),
       signal,
     });
 

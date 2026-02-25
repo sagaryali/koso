@@ -27,6 +27,14 @@ import {
   Scale,
   Layers,
   Telescope,
+  Users,
+  ShieldQuestion,
+  Briefcase,
+  SearchX,
+  Compass,
+  HeartCrack,
+  CircleAlert,
+  SendHorizontal,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { useRouter } from "next/navigation";
@@ -38,6 +46,16 @@ import { streamCompletion } from "@/lib/ai/stream";
 import { createClient } from "@/lib/supabase/client";
 import { useCodebaseStatus } from "@/hooks/use-codebase-status";
 import { StreamedMarkdown } from "@/components/ui/streamed-markdown";
+
+const ACTION_ICONS: Record<string, LucideIcon> = {
+  whos_asking: Users,
+  challenge_spec: ShieldQuestion,
+  build_the_case: Briefcase,
+  whats_missing: SearchX,
+  what_to_build_next: Compass,
+  customer_struggles: HeartCrack,
+  unaddressed_feedback: CircleAlert,
+};
 
 // --- Types ---
 
@@ -144,6 +162,12 @@ interface FetchedContext {
     trends: MarketResult[];
     bestPractices: MarketResult[];
   };
+  workspaceOverview?: {
+    clusters: { label: string; summary: string; count: number }[];
+    allSpecs: { title: string; type: string; status: string }[];
+    unlinkedEvidence: { title: string; content: string }[];
+    totalEvidenceCount: number;
+  };
 }
 
 async function fetchMarketResearch(
@@ -190,9 +214,11 @@ async function fetchContext(
         ? ["artifact", "codebase_module"]
         : strategy === "full_doc_with_specs"
           ? ["artifact"]
-          : strategy === "market_feasibility"
-            ? undefined // all sources for feasibility
-            : undefined;
+          : strategy === "evidence_with_specs"
+            ? undefined // evidence + artifacts for cross-referencing
+            : strategy === "market_feasibility"
+              ? undefined // all sources for feasibility
+              : undefined;
 
   // Run embedding search and market research in parallel
   const [embeddingResult, marketResult] = await Promise.allSettled([
@@ -264,6 +290,90 @@ async function fetchContext(
   };
 }
 
+interface WorkspaceOverview {
+  clusters: { label: string; summary: string; count: number }[];
+  allSpecs: { title: string; type: string; status: string }[];
+  unlinkedEvidence: { title: string; content: string }[];
+  totalEvidenceCount: number;
+}
+
+async function fetchWorkspaceOverview(
+  workspaceId: string,
+  supabase: ReturnType<typeof createClient>
+): Promise<WorkspaceOverview> {
+  const [clustersResult, artifactsResult, evidenceResult, linksResult] =
+    await Promise.allSettled([
+      supabase
+        .from("evidence_clusters")
+        .select("label, summary, evidence_count")
+        .eq("workspace_id", workspaceId)
+        .order("evidence_count", { ascending: false }),
+      supabase
+        .from("artifacts")
+        .select("id, title, type, status")
+        .eq("workspace_id", workspaceId)
+        .neq("type", "architecture_summary")
+        .order("updated_at", { ascending: false }),
+      supabase
+        .from("evidence")
+        .select("id, title, content")
+        .eq("workspace_id", workspaceId),
+      supabase
+        .from("links")
+        .select("evidence_id")
+        .eq("workspace_id", workspaceId),
+    ]);
+
+  const clusters =
+    clustersResult.status === "fulfilled" && clustersResult.value.data
+      ? clustersResult.value.data.map(
+          (c: { label: string; summary: string; evidence_count: number }) => ({
+            label: c.label,
+            summary: c.summary || "",
+            count: c.evidence_count,
+          })
+        )
+      : [];
+
+  const allSpecs =
+    artifactsResult.status === "fulfilled" && artifactsResult.value.data
+      ? artifactsResult.value.data.map(
+          (a: { title: string; type: string; status: string }) => ({
+            title: a.title,
+            type: a.type,
+            status: a.status || "draft",
+          })
+        )
+      : [];
+
+  const allEvidence =
+    evidenceResult.status === "fulfilled" && evidenceResult.value.data
+      ? evidenceResult.value.data
+      : [];
+
+  const linkedIds = new Set(
+    linksResult.status === "fulfilled" && linksResult.value.data
+      ? linksResult.value.data.map(
+          (l: { evidence_id: string }) => l.evidence_id
+        )
+      : []
+  );
+
+  const unlinkedEvidence = allEvidence
+    .filter((e: { id: string }) => !linkedIds.has(e.id))
+    .map((e: { title: string; content: string }) => ({
+      title: e.title || "Untitled",
+      content: e.content || "",
+    }));
+
+  return {
+    clusters,
+    allSpecs,
+    unlinkedEvidence,
+    totalEvidenceCount: allEvidence.length,
+  };
+}
+
 // --- Component ---
 
 export function CommandPalette({
@@ -290,8 +400,13 @@ export function CommandPalette({
   const [subView, setSubView] = useState<SubView | null>(null);
   const [cachedArtifacts, setCachedArtifacts] = useState<CachedArtifact[]>([]);
   const [responseMode, setResponseMode] = useState<"concise" | "detailed">("concise");
+  const [conversationHistory, setConversationHistory] = useState<
+    { role: string; content: string }[]
+  >([]);
+  const [followUpQuery, setFollowUpQuery] = useState("");
 
   const inputRef = useRef<HTMLInputElement>(null);
+  const followUpInputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
   const responseRef = useRef<HTMLDivElement>(null);
   const abortRef = useRef<AbortController | null>(null);
@@ -370,6 +485,27 @@ export function CommandPalette({
 
   const quickActionItems = useMemo((): DisplayItem[] => [
     {
+      id: "qa-build-next",
+      label: "What should we build next?",
+      description: "Portfolio-level prioritization using evidence themes and spec coverage",
+      type: "quick_action",
+      icon: Compass,
+    },
+    {
+      id: "qa-customer-struggles",
+      label: "What are customers struggling with?",
+      description: "Synthesize all evidence into ranked pain points with severity",
+      type: "quick_action",
+      icon: HeartCrack,
+    },
+    {
+      id: "qa-unaddressed-feedback",
+      label: "What feedback haven't we addressed?",
+      description: "Find unlinked evidence, group into themes, suggest new specs",
+      type: "quick_action",
+      icon: CircleAlert,
+    },
+    {
       id: "qa-research",
       label: "Research a feature",
       description: "Search the web for competitor implementations and best practices",
@@ -422,7 +558,11 @@ export function CommandPalette({
       if (!isGlobalMode) {
         const aiItems: DisplayItem[] = [];
 
-        const filtered = AI_ACTIONS.filter((a) => matchesQuery(a.label, a.description));
+        const filtered = AI_ACTIONS.filter(
+          (a) =>
+            a.contextStrategy !== "workspace_overview" &&
+            matchesQuery(a.label, a.description)
+        );
         for (const action of filtered) {
           aiItems.push({
             id: action.id,
@@ -430,7 +570,7 @@ export function CommandPalette({
             description: action.description,
             type: "action",
             action,
-            icon: Sparkles,
+            icon: ACTION_ICONS[action.id] || Sparkles,
           });
         }
 
@@ -513,6 +653,8 @@ export function CommandPalette({
     setError(null);
     setSubView(null);
     setResponseMode("concise");
+    setConversationHistory([]);
+    setFollowUpQuery("");
     userHasScrolledUpRef.current = false;
     cachedPromptsRef.current = null;
     if (abortRef.current) {
@@ -600,6 +742,9 @@ export function CommandPalette({
         false // detailed
       );
 
+      // Initialize conversation history with the first user message
+      setConversationHistory([{ role: "user", content: user }]);
+
       await streamCompletion({
         system,
         user,
@@ -609,9 +754,13 @@ export function CommandPalette({
           streamedTextRef.current += text;
           setStreamedText(streamedTextRef.current);
         },
-        onComplete: () => {
+        onComplete: (fullText) => {
           setIsStreaming(false);
           setView("result");
+          setConversationHistory((prev) => [
+            ...prev,
+            { role: "assistant", content: fullText },
+          ]);
         },
         onError: (err) => {
           setIsStreaming(false);
@@ -621,6 +770,92 @@ export function CommandPalette({
         signal: abortController.signal,
       });
     },
+    [context]
+  );
+
+  // Execute a workspace-level action (uses fetchWorkspaceOverview instead of embedding search)
+  const executeWorkspaceAction = useCallback(
+    async (action: AIAction, freeformQuery: string) => {
+      if (!context) return;
+
+      setView("streaming");
+      setStreamedText("");
+      streamedTextRef.current = "";
+      setIsStreaming(true);
+      setActiveAction(action);
+      setError(null);
+      setResponseMode("concise");
+      setConversationHistory([]);
+      setFollowUpQuery("");
+      userHasScrolledUpRef.current = false;
+
+      const abortController = new AbortController();
+      abortRef.current = abortController;
+
+      const workspaceId = context.workspaceId;
+      const overview = await fetchWorkspaceOverview(workspaceId, supabase);
+
+      const currentDoc = {
+        title: "Workspace Query",
+        type: "query",
+        content: freeformQuery,
+      };
+
+      const retrievedContext: FetchedContext = {
+        artifacts: [],
+        evidence: [],
+        codebaseModules: [],
+        workspaceOverview: overview,
+      };
+
+      const { system, user } = buildPrompt(
+        action,
+        currentDoc,
+        retrievedContext,
+        context.workspace,
+        freeformQuery,
+        undefined,
+        true // concise
+      );
+
+      cachedPromptsRef.current = buildPrompt(
+        action,
+        currentDoc,
+        retrievedContext,
+        context.workspace,
+        freeformQuery,
+        undefined,
+        false // detailed
+      );
+
+      setConversationHistory([{ role: "user", content: user }]);
+
+      await streamCompletion({
+        system,
+        user,
+        model: "haiku",
+        maxTokens: 1024,
+        onChunk: (text) => {
+          streamedTextRef.current += text;
+          setStreamedText(streamedTextRef.current);
+        },
+        onComplete: (fullText) => {
+          setIsStreaming(false);
+          setView("result");
+          setConversationHistory((prev) => [
+            ...prev,
+            { role: "assistant", content: fullText },
+          ]);
+        },
+        onError: (err) => {
+          setIsStreaming(false);
+          setError(err.message);
+          setView("result");
+        },
+        signal: abortController.signal,
+      });
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     [context]
   );
 
@@ -728,6 +963,24 @@ export function CommandPalette({
 
       // Quick actions — enter sub-view or execute directly
       if (item.type === "quick_action") {
+        if (item.id === "qa-build-next") {
+          setSubView({ actionId: "what_to_build_next", placeholder: "Describe your product briefly for context..." });
+          setQuery("");
+          requestAnimationFrame(() => inputRef.current?.focus());
+          return;
+        }
+        if (item.id === "qa-customer-struggles") {
+          setSubView({ actionId: "customer_struggles", placeholder: "Describe your product briefly for context..." });
+          setQuery("");
+          requestAnimationFrame(() => inputRef.current?.focus());
+          return;
+        }
+        if (item.id === "qa-unaddressed-feedback") {
+          setSubView({ actionId: "unaddressed_feedback", placeholder: "Describe your product briefly for context..." });
+          setQuery("");
+          requestAnimationFrame(() => inputRef.current?.focus());
+          return;
+        }
         if (item.id === "qa-research") {
           setSubView({ actionId: "research_feature", placeholder: "What feature do you want to research?" });
           setQuery("");
@@ -770,7 +1023,7 @@ export function CommandPalette({
         }
       }
     },
-    [query, executeAction, executeSummarizeEvidence, handleClose]
+    [query, executeAction, executeWorkspaceAction, executeSummarizeEvidence, handleClose]
   );
 
   // --- Effects ---
@@ -829,7 +1082,13 @@ export function CommandPalette({
       e.preventDefault();
       if (query.trim()) {
         const action = AI_ACTIONS.find((a) => a.id === subView.actionId) || null;
-        executeAction(action, query);
+        const isWorkspaceAction =
+          action?.contextStrategy === "workspace_overview";
+        if (isWorkspaceAction && action) {
+          executeWorkspaceAction(action, query);
+        } else {
+          executeAction(action, query);
+        }
         setSubView(null);
       }
       return;
@@ -888,6 +1147,8 @@ export function CommandPalette({
     setError(null);
     setSubView(null);
     setResponseMode("concise");
+    setConversationHistory([]);
+    setFollowUpQuery("");
     cachedPromptsRef.current = null;
     requestAnimationFrame(() => inputRef.current?.focus());
   }, []);
@@ -904,6 +1165,9 @@ export function CommandPalette({
     setError(null);
     userHasScrolledUpRef.current = false;
 
+    // Reset conversation history for the detailed version
+    setConversationHistory([{ role: "user", content: cached.user }]);
+
     const abortController = new AbortController();
     abortRef.current = abortController;
 
@@ -916,9 +1180,13 @@ export function CommandPalette({
         streamedTextRef.current += text;
         setStreamedText(streamedTextRef.current);
       },
-      onComplete: () => {
+      onComplete: (fullText) => {
         setIsStreaming(false);
         setView("result");
+        setConversationHistory((prev) => [
+          ...prev,
+          { role: "assistant", content: fullText },
+        ]);
       },
       onError: (err) => {
         setIsStreaming(false);
@@ -928,6 +1196,56 @@ export function CommandPalette({
       signal: abortController.signal,
     });
   }, []);
+
+  const handleFollowUp = useCallback(async () => {
+    const text = followUpQuery.trim();
+    if (!text || !cachedPromptsRef.current) return;
+
+    const system = cachedPromptsRef.current.system;
+    const newHistory = [
+      ...conversationHistory,
+      { role: "user", content: text },
+    ];
+
+    setConversationHistory(newHistory);
+    setFollowUpQuery("");
+    setView("streaming");
+    setStreamedText("");
+    streamedTextRef.current = "";
+    setIsStreaming(true);
+    setError(null);
+    setResponseMode("detailed");
+    userHasScrolledUpRef.current = false;
+
+    const abortController = new AbortController();
+    abortRef.current = abortController;
+
+    await streamCompletion({
+      system,
+      user: "",
+      messages: newHistory,
+      model: "sonnet",
+      maxTokens: 4096,
+      onChunk: (chunk) => {
+        streamedTextRef.current += chunk;
+        setStreamedText(streamedTextRef.current);
+      },
+      onComplete: (fullText) => {
+        setIsStreaming(false);
+        setView("result");
+        setConversationHistory((prev) => [
+          ...prev,
+          { role: "assistant", content: fullText },
+        ]);
+      },
+      onError: (err) => {
+        setIsStreaming(false);
+        setError(err.message);
+        setView("result");
+      },
+      signal: abortController.signal,
+    });
+  }, [followUpQuery, conversationHistory]);
 
   if (!open) return null;
 
@@ -1155,6 +1473,33 @@ export function CommandPalette({
                 >
                   <Icon icon={X} size={14} />
                   Discard
+                </button>
+              </div>
+            )}
+
+            {/* Follow-up input */}
+            {view === "result" && !error && conversationHistory.length > 0 && (
+              <div className="flex items-center gap-2 border-t border-border-default px-4 py-2">
+                <input
+                  ref={followUpInputRef}
+                  type="text"
+                  value={followUpQuery}
+                  onChange={(e) => setFollowUpQuery(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && followUpQuery.trim()) {
+                      e.preventDefault();
+                      handleFollowUp();
+                    }
+                  }}
+                  placeholder="Ask a follow-up..."
+                  className="h-9 flex-1 bg-transparent text-sm text-text-primary placeholder:text-text-tertiary focus:outline-none"
+                />
+                <button
+                  onClick={handleFollowUp}
+                  disabled={!followUpQuery.trim()}
+                  className="inline-flex shrink-0 cursor-pointer items-center gap-1 border-none bg-transparent px-2 py-1.5 text-[13px] text-text-tertiary hover:text-text-primary disabled:cursor-default disabled:opacity-30"
+                >
+                  <Icon icon={SendHorizontal} size={14} />
                 </button>
               </div>
             )}

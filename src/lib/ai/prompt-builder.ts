@@ -27,6 +27,13 @@ interface MarketResult {
   source: string;
 }
 
+interface WorkspaceOverviewContext {
+  clusters: { label: string; summary: string; count: number }[];
+  allSpecs: { title: string; type: string; status: string }[];
+  unlinkedEvidence: { title: string; content: string }[];
+  totalEvidenceCount: number;
+}
+
 interface RetrievedContext {
   artifacts: { title: string; type: string; chunkText: string }[];
   evidence: {
@@ -42,6 +49,7 @@ interface RetrievedContext {
     trends: MarketResult[];
     bestPractices: MarketResult[];
   };
+  workspaceOverview?: WorkspaceOverviewContext;
 }
 
 const CODE_SPECIFIC_STRATEGIES = new Set([
@@ -206,6 +214,46 @@ export function buildPrompt(
         }
         userParts.push("");
       }
+    }
+  }
+
+  // Workspace overview context
+  if (context.workspaceOverview) {
+    const wo = context.workspaceOverview;
+
+    userParts.push("--- Workspace Overview ---");
+    userParts.push("");
+    userParts.push(
+      `Total evidence: ${wo.totalEvidenceCount} items (${wo.unlinkedEvidence.length} unlinked to any spec)`
+    );
+    userParts.push("");
+
+    if (wo.clusters.length > 0) {
+      userParts.push("Evidence Clusters (pre-computed themes):");
+      for (const c of wo.clusters) {
+        userParts.push(`- ${c.label} (${c.count} items): ${c.summary}`);
+      }
+      userParts.push("");
+    }
+
+    if (wo.allSpecs.length > 0) {
+      userParts.push("All Specifications:");
+      for (const s of wo.allSpecs) {
+        userParts.push(`- ${s.title} [${s.type}] — ${s.status}`);
+      }
+      userParts.push("");
+    }
+
+    if (wo.unlinkedEvidence.length > 0) {
+      const capped = wo.unlinkedEvidence.slice(0, 30);
+      userParts.push(
+        `Unlinked Evidence (${wo.unlinkedEvidence.length} items, showing up to 30):`
+      );
+      for (const e of capped) {
+        const snippet = e.content.slice(0, 200);
+        userParts.push(`- ${e.title}: ${snippet}`);
+      }
+      userParts.push("");
     }
   }
 

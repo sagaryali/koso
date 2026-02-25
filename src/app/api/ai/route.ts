@@ -12,6 +12,13 @@ function isDemoMode() {
 
 function detectIntent(system: string, user: string): string {
   const combined = (system + " " + user).toLowerCase();
+  if (combined.includes("who is asking") || combined.includes("who's asking")) return "whos_asking";
+  if (combined.includes("critical review") || combined.includes("challenge")) return "challenge_spec";
+  if (combined.includes("business case") || combined.includes("build the case")) return "build_the_case";
+  if (combined.includes("what's missing") || combined.includes("gap analysis")) return "whats_missing";
+  if (combined.includes("what should we build next") || combined.includes("prioriti")) return "what_to_build_next";
+  if (combined.includes("struggling") || combined.includes("pain point")) return "customer_struggles";
+  if (combined.includes("unaddressed") || combined.includes("unlinked evidence") || combined.includes("haven't we addressed")) return "unaddressed_feedback";
   if (combined.includes("user stor")) return "user_stories";
   if (combined.includes("acceptance criteria")) return "acceptance_criteria";
   if (combined.includes("conflict")) return "conflicts";
@@ -60,18 +67,25 @@ function createMockStream(system: string, user: string): Response {
 
 export async function POST(request: NextRequest) {
   try {
-    const { system, user, model, maxTokens } = await request.json();
+    const { system, user, messages, model, maxTokens } = await request.json();
 
-    if (!system || !user) {
+    if (!system || (!user && !messages)) {
       return new Response(
-        JSON.stringify({ error: "system and user prompts are required" }),
+        JSON.stringify({ error: "system and user (or messages) are required" }),
         { status: 400, headers: { "Content-Type": "application/json" } }
       );
     }
 
+    // Build messages array: use multi-turn messages if provided, else single user string
+    const chatMessages: { role: "user" | "assistant"; content: string }[] =
+      messages || [{ role: "user", content: user }];
+
     // Demo mode: return mock streaming response
+    // For demo, extract the first user message for intent detection
+    const demoUserText =
+      user || chatMessages.find((m: { role: string }) => m.role === "user")?.content || "";
     if (isDemoMode()) {
-      return createMockStream(system, user);
+      return createMockStream(system, demoUserText);
     }
 
     const modelId =
@@ -83,7 +97,7 @@ export async function POST(request: NextRequest) {
       model: modelId,
       max_tokens: Math.min(maxTokens || 4096, 8192),
       system,
-      messages: [{ role: "user", content: user }],
+      messages: chatMessages,
     });
 
     const encoder = new TextEncoder();
