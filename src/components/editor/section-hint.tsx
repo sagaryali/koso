@@ -80,14 +80,18 @@ export function SectionHint({
   return (
     <div
       className={cn(
-        "absolute left-0 z-30 transition-opacity duration-150",
+        "absolute left-0 right-0 z-50 transition-opacity duration-150",
         visible ? "opacity-100" : "opacity-0"
       )}
       style={{ top: position.top }}
     >
       <button
-        onClick={onOpenPanel}
-        className="inline-flex cursor-pointer items-center gap-1.5 border-none bg-transparent p-0 text-[11px] text-text-tertiary hover:text-text-secondary"
+        onClick={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          onOpenPanel();
+        }}
+        className="relative inline-flex cursor-pointer items-center gap-1.5 border-none bg-bg-primary py-1 pr-2 text-[11px] text-text-tertiary hover:text-text-secondary"
       >
         <Icon icon={Lightbulb} size={12} />
         <span>
