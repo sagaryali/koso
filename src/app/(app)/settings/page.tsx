@@ -470,15 +470,15 @@ export default function SettingsPage() {
                   size="sm"
                   icon={RefreshCw}
                   onClick={handleResync}
-                  disabled={isSyncing}
+                  disabled={false}
                 >
-                  Re-sync
+                  {isSyncing ? "Retry" : "Re-sync"}
                 </Button>
                 <Button
                   variant="ghost"
                   size="sm"
                   onClick={handleDisconnect}
-                  disabled={isSyncing || disconnecting}
+                  disabled={disconnecting}
                 >
                   Disconnect
                 </Button>
