@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { getAuthenticatedWorkspace } from "@/lib/api/get-workspace";
 
 export async function GET() {
@@ -8,9 +9,11 @@ export async function GET() {
   if ("error" in result) {
     return NextResponse.json({ error: result.error }, { status: result.status });
   }
-  const { workspace, supabase } = result;
+  const { workspace } = result;
 
-  const { data: connections } = await supabase
+  // Use admin client to bypass RLS — connections are created via admin
+  const admin = createAdminClient();
+  const { data: connections } = await admin
     .from("codebase_connections")
     .select("*")
     .eq("workspace_id", workspace.id)
@@ -19,7 +22,6 @@ export async function GET() {
   const allConnections = connections ?? [];
 
   return NextResponse.json({
-    // Backward compat: first connection as `connection`
     connection: allConnections.length > 0 ? allConnections[0] : null,
     connections: allConnections,
     githubUsername: workspace.github_username,

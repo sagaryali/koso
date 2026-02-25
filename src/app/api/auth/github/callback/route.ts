@@ -95,7 +95,13 @@ export async function GET(request: NextRequest) {
     );
   }
 
-  return NextResponse.redirect(
-    new URL("/settings?github=connected", request.url)
+  // Redirect back to the page that initiated the OAuth flow
+  const state = request.nextUrl.searchParams.get("state");
+  const returnTo = state ? decodeURIComponent(state) : "/settings";
+  const redirectUrl = new URL(
+    returnTo.startsWith("/") ? `${returnTo}${returnTo.includes("?") ? "&" : "?"}github=connected` : "/settings?github=connected",
+    request.url
   );
+
+  return NextResponse.redirect(redirectUrl);
 }

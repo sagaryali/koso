@@ -233,12 +233,18 @@ export function AddEvidenceDialog({
         return;
       }
 
-      // Get public URL
-      const { data: urlData } = supabase.storage
+      // Get a signed URL (works for private buckets)
+      const { data: urlData, error: urlError } = await supabase.storage
         .from("evidence-files")
-        .getPublicUrl(filePath);
+        .createSignedUrl(filePath, 600); // 10 min expiry
 
-      const fileUrl = urlData.publicUrl;
+      if (urlError || !urlData?.signedUrl) {
+        toast({ message: "Failed to get file URL" });
+        setFileUploading(false);
+        return;
+      }
+
+      const fileUrl = urlData.signedUrl;
 
       // Extract text from file
       let extractedText = "";

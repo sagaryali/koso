@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Button, Input, TextArea, KosoWordmark } from "@/components/ui";
 import { FeedbackList } from "@/components/evidence/feedback-list";
 import { createClient } from "@/lib/supabase/client";
@@ -44,7 +44,15 @@ export default function OnboardingPage() {
 
   const synthTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const router = useRouter();
+  const searchParams = useSearchParams();
   const supabase = createClient();
+
+  // Resume at step 4 if returning from GitHub OAuth
+  useEffect(() => {
+    if (searchParams.get("github") === "connected") {
+      setStep(4);
+    }
+  }, [searchParams]);
 
   // Clean up synthesis auto-advance timer
   useEffect(() => {
@@ -275,9 +283,8 @@ export default function OnboardingPage() {
   }
 
   function handleConnectGitHub() {
-    // Store onboarding state in sessionStorage so we can resume after OAuth
     sessionStorage.setItem("koso_onboarding", "true");
-    window.location.href = "/api/auth/github";
+    window.location.href = "/api/auth/github?return_to=/onboarding";
   }
 
   return (

@@ -19,6 +19,8 @@ import {
 import { Button, Icon, KosoMark } from "@/components/ui";
 import { DropdownMenu } from "@/components/ui/dropdown-menu";
 import { NewSpecDialog } from "@/components/new-spec-dialog";
+import { EvidenceFlow } from "@/components/spec-creation/evidence-flow";
+import { Dialog } from "@/components/ui";
 import { toast } from "@/components/ui/toast";
 import { cn } from "@/lib/utils";
 import { createClient } from "@/lib/supabase/client";
@@ -27,7 +29,38 @@ import {
   clearActiveWorkspaceCookie,
 } from "@/lib/workspace-cookie";
 import { useCodebaseStatus } from "@/hooks/use-codebase-status";
-import type { Workspace, Artifact } from "@/types";
+import type { Workspace, Artifact, CodebaseConnection } from "@/types";
+
+function EvidenceFlowDialog({
+  open,
+  onClose,
+  workspace,
+  connection,
+}: {
+  open: boolean;
+  onClose: () => void;
+  workspace: Workspace;
+  connection: CodebaseConnection | null;
+}) {
+  return (
+    <Dialog open={open} onClose={onClose} className="max-w-xl">
+      <h2 className="text-lg font-bold tracking-tight">
+        New Spec from Evidence
+      </h2>
+      <p className="mt-1 mb-4 text-sm text-text-secondary">
+        Select evidence, cluster themes, then draft a spec.
+      </p>
+      <EvidenceFlow
+        workspaceId={workspace.id}
+        workspace={workspace}
+        hasCodebase={connection?.status === "ready"}
+        codebaseRepoName={connection?.repo_name}
+        onComplete={onClose}
+        onCancel={onClose}
+      />
+    </Dialog>
+  );
+}
 
 interface AppSidebarProps {
   workspace: Workspace | null;
@@ -59,6 +92,8 @@ export function AppSidebar({
   const toggleCollapsed = onToggleCollapsed ?? (() => setInternalCollapsed((prev) => !prev));
   const [specs, setSpecs] = useState<Artifact[]>([]);
   const [newSpecOpen, setNewSpecOpen] = useState(false);
+  const [evidenceCount, setEvidenceCount] = useState(0);
+  const [evidenceFlowOpen, setEvidenceFlowOpen] = useState(false);
   const router = useRouter();
   const pathname = usePathname();
   const supabase = createClient();
@@ -78,7 +113,17 @@ export function AppSidebar({
       if (data) setSpecs(data);
     }
 
+    async function fetchEvidenceCount() {
+      const { count } = await supabase
+        .from("evidence")
+        .select("id", { count: "exact", head: true })
+        .eq("workspace_id", workspace!.id);
+
+      setEvidenceCount(count ?? 0);
+    }
+
     fetchSpecs();
+    fetchEvidenceCount();
   }, [workspace, pathname]);
 
   async function handleLogout() {
@@ -336,14 +381,27 @@ export function AppSidebar({
         )}
       </div>
       {workspace && (
-        <NewSpecDialog
-          open={newSpecOpen}
-          onClose={() => setNewSpecOpen(false)}
-          workspaceId={workspace.id}
-          onCreated={(spec) => {
-            setSpecs((prev) => [spec as Artifact, ...prev]);
-          }}
-        />
+        <>
+          <NewSpecDialog
+            open={newSpecOpen}
+            onClose={() => setNewSpecOpen(false)}
+            workspaceId={workspace.id}
+            evidenceCount={evidenceCount}
+            onStartFromEvidence={() => {
+              setNewSpecOpen(false);
+              setEvidenceFlowOpen(true);
+            }}
+            onCreated={(spec) => {
+              setSpecs((prev) => [spec as Artifact, ...prev]);
+            }}
+          />
+          <EvidenceFlowDialog
+            open={evidenceFlowOpen}
+            onClose={() => setEvidenceFlowOpen(false)}
+            workspace={workspace}
+            connection={connection}
+          />
+        </>
       )}
     </aside>
   );
