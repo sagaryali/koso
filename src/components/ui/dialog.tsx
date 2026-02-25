@@ -106,7 +106,7 @@ export function Dialog({
       <div
         ref={dialogRef}
         className={cn(
-          "relative w-full max-w-lg rounded-none border border-border-strong bg-bg-primary p-6 shadow-modal",
+          "relative max-h-[calc(100vh-4rem)] w-full max-w-lg overflow-y-auto rounded-none border border-border-strong bg-bg-primary p-6 shadow-modal",
           className
         )}
         {...props}
