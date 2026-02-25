@@ -14,7 +14,7 @@ import {
   Plus,
   File,
   LogOut,
-  MoreVertical,
+  Trash2,
 } from "lucide-react";
 import { Button, Icon, KosoMark } from "@/components/ui";
 import { DropdownMenu } from "@/components/ui/dropdown-menu";
@@ -254,20 +254,16 @@ export function AppSidebar({
                       <Icon icon={File} className="shrink-0 text-text-tertiary" />
                       <span className="truncate">{spec.title}</span>
                     </button>
-                    <DropdownMenu
-                      align="right"
-                      trigger={
-                        <div className="flex h-6 w-6 shrink-0 cursor-pointer items-center justify-center opacity-0 transition-none group-hover:opacity-100">
-                          <Icon icon={MoreVertical} size={14} className="text-text-tertiary" />
-                        </div>
-                      }
-                      items={[
-                        {
-                          label: "Delete",
-                          onClick: () => handleDeleteSpec(spec.id),
-                        },
-                      ]}
-                    />
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleDeleteSpec(spec.id);
+                      }}
+                      className="flex h-6 w-6 shrink-0 cursor-pointer items-center justify-center opacity-0 transition-none group-hover:opacity-100 hover:text-state-error"
+                      aria-label="Delete spec"
+                    >
+                      <Icon icon={Trash2} size={13} className="text-text-tertiary hover:text-state-error" />
+                    </button>
                   </div>
                 );
               })}
