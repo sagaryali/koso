@@ -297,7 +297,7 @@ export default function OnboardingPage() {
             <div className="mt-8 space-y-5">
               <Input
                 label="Product name"
-                placeholder="Acme"
+                placeholder="e.g. Stripe, Notion, Figma"
                 value={productName}
                 onChange={(e) => setProductName(e.target.value)}
               />

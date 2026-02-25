@@ -67,7 +67,7 @@ export function NewProductDialog({ open, onClose }: NewProductDialogProps) {
       <div className="mt-6 space-y-5">
         <Input
           label="Product name"
-          placeholder="Acme"
+          placeholder="e.g. Stripe, Notion, Figma"
           value={name}
           onChange={(e) => setName(e.target.value)}
           onKeyDown={(e) => {
