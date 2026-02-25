@@ -36,7 +36,7 @@ export function NewSpecDialog({
       .insert({
         workspace_id: workspaceId,
         type: template.type,
-        title: template.id === "blank" ? "Untitled Spec" : "",
+        title: template.id === "blank" ? "Untitled Spec" : `Untitled ${template.label}`,
         content: template.content,
         status: "draft",
       })
