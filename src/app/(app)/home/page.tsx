@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
-import { Code } from "lucide-react";
+import { Code, Check, Circle, X } from "lucide-react";
 import { Button, Input, Badge, Icon, Skeleton } from "@/components/ui";
 import { toast } from "@/components/ui/toast";
 import { cn } from "@/lib/utils";
@@ -112,9 +112,29 @@ export default function HomePage() {
   const prevCodebaseStatus = useRef<string | null>(null);
   const [codebaseJustReady, setCodebaseJustReady] = useState(false);
 
+  const [checklistDismissed, setChecklistDismissed] = useState(true); // default true to avoid flash
+
   useEffect(() => {
     document.title = "Koso — Home";
   }, []);
+
+  // ── Checklist dismissal persistence ─────────────────────────────
+  useEffect(() => {
+    if (!workspace) return;
+    const dismissed = localStorage.getItem(
+      `koso_checklist_dismissed_${workspace.id}`
+    );
+    setChecklistDismissed(dismissed === "true");
+  }, [workspace?.id]);
+
+  function dismissChecklist() {
+    if (!workspace) return;
+    localStorage.setItem(
+      `koso_checklist_dismissed_${workspace.id}`,
+      "true"
+    );
+    setChecklistDismissed(true);
+  }
 
   // ── Data fetching ──────────────────────────────────────────────
   useEffect(() => {
@@ -462,6 +482,27 @@ export default function HomePage() {
     }
   }
 
+  // ── Create blank spec (from checklist) ────────────────────────
+  async function handleCreateSpec() {
+    if (!workspace) return;
+
+    const { data } = await supabase
+      .from("artifacts")
+      .insert({
+        workspace_id: workspace.id,
+        type: "prd",
+        title: "Untitled",
+        content: { type: "doc", content: [{ type: "paragraph" }] },
+        status: "draft",
+      })
+      .select("id")
+      .single();
+
+    if (data) {
+      router.push(`/editor/${data.id}`);
+    }
+  }
+
   // ── Derived: subtitle ──────────────────────────────────────────
   function getSubtitle() {
     if (connection?.status === "syncing" || connection?.status === "pending") {
@@ -532,11 +573,109 @@ export default function HomePage() {
 
   const timeline = getTimeline();
 
+  // ── Checklist completion ──────────────────────────────────────
+  const hasEvidence = evidenceCount > 0;
+  const hasSpec = recentArtifacts.length > 0;
+  const hasCodebase = connection?.status === "ready";
+  const completedCount = [hasEvidence, hasSpec, hasCodebase].filter(Boolean).length;
+  const allComplete = completedCount === 3;
+  const showChecklist = !allComplete && !checklistDismissed;
+
+  const checklistSteps = [
+    {
+      done: hasEvidence,
+      label: "Add evidence",
+      description: "Paste customer feedback, a metric, or a research note",
+      onClick: () => {
+        const el = document.getElementById("evidence-quick-add");
+        if (el) {
+          el.scrollIntoView({ behavior: "smooth", block: "center" });
+          el.focus();
+        }
+      },
+    },
+    {
+      done: hasSpec,
+      label: "Write your first spec",
+      description: "Describe what you\u2019re building \u2014 the AI will help",
+      onClick: handleCreateSpec,
+    },
+    {
+      done: hasCodebase,
+      label: "Connect your codebase",
+      description: "Link GitHub for technical feasibility insights",
+      onClick: () => router.push("/settings"),
+    },
+  ];
+
   return (
     <div className="px-12 py-10 page-transition">
       {/* 1. Greeting + contextual subtitle */}
       <h1 className="text-2xl font-bold tracking-tight">{getGreeting()}</h1>
       <p className="mt-1 text-sm text-text-secondary">{getSubtitle()}</p>
+
+      {/* Getting started checklist */}
+      {showChecklist && (
+        <div className="mt-8 border border-border-default p-5">
+          <div className="flex items-center justify-between">
+            <p className="text-sm font-medium text-text-primary">
+              Get started
+            </p>
+            <button
+              onClick={dismissChecklist}
+              className="cursor-pointer text-text-tertiary hover:text-text-primary transition-none"
+              aria-label="Dismiss checklist"
+            >
+              <X size={14} />
+            </button>
+          </div>
+          <div className="mt-4 space-y-1">
+            {checklistSteps.map((step) => (
+              <button
+                key={step.label}
+                onClick={step.done ? undefined : step.onClick}
+                className={cn(
+                  "flex w-full items-center gap-3 px-2 py-2.5 text-left transition-none",
+                  step.done
+                    ? "opacity-50"
+                    : "cursor-pointer hover:bg-bg-hover"
+                )}
+                disabled={step.done}
+              >
+                {step.done ? (
+                  <Icon
+                    icon={Check}
+                    size={16}
+                    className="shrink-0 text-text-tertiary"
+                  />
+                ) : (
+                  <Icon
+                    icon={Circle}
+                    size={16}
+                    className="shrink-0 text-text-tertiary"
+                  />
+                )}
+                <div className="min-w-0 flex-1">
+                  <span
+                    className={cn(
+                      "text-sm font-medium",
+                      step.done && "line-through"
+                    )}
+                  >
+                    {step.label}
+                  </span>
+                  <p className="text-xs text-text-tertiary">
+                    {step.description}
+                  </p>
+                </div>
+              </button>
+            ))}
+          </div>
+          <p className="mt-3 text-xs text-text-tertiary">
+            {completedCount} of 3 complete
+          </p>
+        </div>
+      )}
 
       {/* 2. Insights card */}
       {evidenceCount > 0 && (
@@ -601,6 +740,7 @@ export default function HomePage() {
         <div className="flex gap-3">
           <div className="flex-1">
             <Input
+              id="evidence-quick-add"
               placeholder="Paste feedback, a metric, or a quick note..."
               value={evidenceInput}
               onChange={(e) => setEvidenceInput(e.target.value)}
