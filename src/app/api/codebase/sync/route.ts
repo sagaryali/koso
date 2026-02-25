@@ -32,10 +32,15 @@ export async function POST() {
   }
 
   if (connection.status === "syncing") {
-    return NextResponse.json(
-      { error: "Sync already in progress" },
-      { status: 409 }
-    );
+    // Allow re-sync if stuck for more than 5 minutes
+    const updatedAt = new Date(connection.updated_at).getTime();
+    const fiveMinutes = 5 * 60 * 1000;
+    if (Date.now() - updatedAt < fiveMinutes) {
+      return NextResponse.json(
+        { error: "Sync already in progress" },
+        { status: 409 }
+      );
+    }
   }
 
   // Fire-and-forget re-sync

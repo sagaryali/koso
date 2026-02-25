@@ -137,16 +137,10 @@ export async function indexRepository(
     }
 
     console.log(
-      `[indexer] Stored ${processedCount} modules. Starting AI summarization...`
+      `[indexer] Stored ${processedCount} modules. Marking as ready.`
     );
 
-    // AI Summarization pass
-    await summarizeModules(connectionId, workspaceId);
-
-    // Generate architecture summary
-    await generateArchitectureSummary(connectionId, workspaceId);
-
-    // Mark as ready
+    // Mark as ready immediately — AI summarization runs separately
     await supabase
       .from("codebase_connections")
       .update({
@@ -157,6 +151,14 @@ export async function indexRepository(
       .eq("id", connectionId);
 
     console.log(`[indexer] Indexing complete for ${connection.repo_name}`);
+
+    // Fire-and-forget: AI summarization runs in the background
+    // If this gets killed by Vercel timeout, modules are still indexed and usable
+    summarizeModules(connectionId, workspaceId)
+      .then(() => generateArchitectureSummary(connectionId, workspaceId))
+      .catch((err) =>
+        console.error("[indexer] Background summarization failed:", err)
+      );
   } catch (err) {
     console.error(`[indexer] Indexing failed:`, err);
     await supabase
@@ -296,49 +298,53 @@ async function generateArchitectureSummary(
     `[indexer] Generating architecture summary from ${modules.length} modules...`
   );
 
-  const response = await anthropic.messages.create({
-    model: "claude-sonnet-4-20250514",
-    max_tokens: 2000,
-    messages: [
-      {
-        role: "user",
-        content: `Based on these code modules, generate a structured architecture overview of this codebase. Include: tech stack, main services/modules, data models, API surface, key dependencies, and how the major pieces connect. Be specific and reference actual file paths.\n\nIMPORTANT: Respond in clean plain text only. Do not use markdown formatting characters like **, ##, \`, or other syntax markers. Use clear paragraphs, dashes for bullet points, and blank lines between sections. Use ALL CAPS for section labels.\n\n${moduleOverview}`,
-      },
-    ],
-  });
-
-  const architectureContent =
-    response.content[0].type === "text" ? response.content[0].text : "";
-
-  if (!architectureContent) return;
-
-  // Store as an artifact
-  const { data: existing } = await supabase
-    .from("artifacts")
-    .select("id")
-    .eq("workspace_id", workspaceId)
-    .eq("type", "architecture_summary")
-    .single();
-
-  if (existing) {
-    await supabase
-      .from("artifacts")
-      .update({
-        content: { type: "doc", content: [{ type: "paragraph", content: [{ type: "text", text: architectureContent }] }] },
-        updated_at: new Date().toISOString(),
-      })
-      .eq("id", existing.id);
-  } else {
-    await supabase.from("artifacts").insert({
-      workspace_id: workspaceId,
-      type: "architecture_summary",
-      title: "Codebase Architecture",
-      content: { type: "doc", content: [{ type: "paragraph", content: [{ type: "text", text: architectureContent }] }] },
-      status: "active",
+  try {
+    const response = await anthropic.messages.create({
+      model: "claude-sonnet-4-20250514",
+      max_tokens: 2000,
+      messages: [
+        {
+          role: "user",
+          content: `Based on these code modules, generate a structured architecture overview of this codebase. Include: tech stack, main services/modules, data models, API surface, key dependencies, and how the major pieces connect. Be specific and reference actual file paths.\n\nIMPORTANT: Respond in clean plain text only. Do not use markdown formatting characters like **, ##, \`, or other syntax markers. Use clear paragraphs, dashes for bullet points, and blank lines between sections. Use ALL CAPS for section labels.\n\n${moduleOverview}`,
+        },
+      ],
     });
-  }
 
-  console.log("[indexer] Architecture summary generated");
+    const architectureContent =
+      response.content[0].type === "text" ? response.content[0].text : "";
+
+    if (!architectureContent) return;
+
+    // Store as an artifact
+    const { data: existing } = await supabase
+      .from("artifacts")
+      .select("id")
+      .eq("workspace_id", workspaceId)
+      .eq("type", "architecture_summary")
+      .single();
+
+    if (existing) {
+      await supabase
+        .from("artifacts")
+        .update({
+          content: { type: "doc", content: [{ type: "paragraph", content: [{ type: "text", text: architectureContent }] }] },
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", existing.id);
+    } else {
+      await supabase.from("artifacts").insert({
+        workspace_id: workspaceId,
+        type: "architecture_summary",
+        title: "Codebase Architecture",
+        content: { type: "doc", content: [{ type: "paragraph", content: [{ type: "text", text: architectureContent }] }] },
+        status: "active",
+      });
+    }
+
+    console.log("[indexer] Architecture summary generated");
+  } catch (err) {
+    console.error("[indexer] Architecture summary generation failed:", err);
+  }
 }
 
 export async function resyncRepository(
@@ -470,20 +476,13 @@ export async function resyncRepository(
 
     console.log(`[indexer] Re-sync: ${processedCount} new files, ${removedModules.length} removed`);
 
-    // Re-summarize new modules
-    if (processedCount > 0) {
-      await summarizeModules(connectionId, workspaceId);
-    }
-
-    // Re-generate architecture summary
-    await generateArchitectureSummary(connectionId, workspaceId);
-
     // Get final counts
     const { count } = await supabase
       .from("codebase_modules")
       .select("*", { count: "exact", head: true })
       .eq("connection_id", connectionId);
 
+    // Mark as ready immediately
     await supabase
       .from("codebase_connections")
       .update({
@@ -492,6 +491,20 @@ export async function resyncRepository(
         module_count: count || 0,
       })
       .eq("id", connectionId);
+
+    // Fire-and-forget: AI summarization for new modules
+    if (processedCount > 0) {
+      summarizeModules(connectionId, workspaceId)
+        .then(() => generateArchitectureSummary(connectionId, workspaceId))
+        .catch((err) =>
+          console.error("[indexer] Background re-sync summarization failed:", err)
+        );
+    } else {
+      // Even if no new files, regenerate architecture summary if needed
+      generateArchitectureSummary(connectionId, workspaceId).catch((err) =>
+        console.error("[indexer] Background architecture summary failed:", err)
+      );
+    }
   } catch (err) {
     console.error("[indexer] Re-sync failed:", err);
     await supabase
