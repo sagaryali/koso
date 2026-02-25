@@ -269,11 +269,11 @@ async function generateArchitectureSummary(
 ): Promise<void> {
   const supabase = createAdminClient();
 
-  // Fetch all module summaries
+  // Fetch all module summaries across all connections for this workspace
   const { data: modules } = await supabase
     .from("codebase_modules")
-    .select("file_path, module_name, module_type, language, summary, exports")
-    .eq("connection_id", connectionId)
+    .select("file_path, module_name, module_type, language, summary, exports, connection_id")
+    .eq("workspace_id", workspaceId)
     .not("summary", "is", null)
     .order("file_path");
 
@@ -282,11 +282,19 @@ async function generateArchitectureSummary(
     return;
   }
 
+  // Look up repo names for each connection
+  const connectionIds = [...new Set(modules.map((m) => m.connection_id))];
+  const { data: conns } = await supabase
+    .from("codebase_connections")
+    .select("id, repo_name")
+    .in("id", connectionIds);
+  const connNameMap = new Map((conns ?? []).map((c) => [c.id, c.repo_name]));
+
   // Build module overview string
   const moduleOverview = modules
     .map(
       (m) =>
-        `[${m.module_type || "unknown"}] ${m.file_path} (${m.language})\nExports: ${(m.exports || []).join(", ")}\n${m.summary}`
+        `[${connNameMap.get(m.connection_id) || "unknown repo"}] [${m.module_type || "unknown"}] ${m.file_path} (${m.language})\nExports: ${(m.exports || []).join(", ")}\n${m.summary}`
     )
     .join("\n\n");
 
