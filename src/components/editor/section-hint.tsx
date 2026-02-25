@@ -80,7 +80,7 @@ export function SectionHint({
   return (
     <div
       className={cn(
-        "absolute left-0 z-50 pointer-events-none transition-opacity duration-150",
+        "absolute right-0 z-50 pointer-events-none transition-opacity duration-150",
         visible ? "opacity-100" : "opacity-0"
       )}
       style={{ top: position.top }}
