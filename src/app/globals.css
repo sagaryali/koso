@@ -356,6 +356,41 @@ body {
   font-style: italic;
 }
 
+/* ── Section Hint Widget (decoration) ── */
+
+.section-hint-widget {
+  user-select: none;
+  margin-bottom: 12px;
+}
+
+.section-hint-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid #E5E5E5;
+  background: #FFFFFF;
+  padding: 4px 10px;
+  font-family: "DM Sans", sans-serif;
+  font-size: 11px;
+  font-weight: 500;
+  color: #666666;
+  cursor: pointer;
+  line-height: 1;
+}
+
+.section-hint-button:hover {
+  border-color: #CCCCCC;
+  color: #000000;
+}
+
+.section-hint-button svg {
+  flex-shrink: 0;
+}
+
+.section-hint-arrow {
+  font-size: 10px;
+}
+
 /* ───────────────────────────────────────────────
    Toast slide-in animation
    ─────────────────────────────────────────────── */

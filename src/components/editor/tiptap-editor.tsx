@@ -8,9 +8,9 @@ import TaskList from "@tiptap/extension-task-list";
 import TaskItem from "@tiptap/extension-task-item";
 import Heading from "@tiptap/extension-heading";
 import Link from "@tiptap/extension-link";
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useEffect, useRef, useCallback } from "react";
 import { SlashCommand, SlashMenu } from "./slash-command";
-import { SectionHint } from "./section-hint";
+import { SectionHintExtension } from "./section-hint-extension";
 
 interface TiptapEditorProps {
   content: Record<string, unknown>;
@@ -91,9 +91,6 @@ export function TiptapEditor({
   const onSectionNameChangeRef = useRef(onSectionNameChange);
   const lastSectionNameRef = useRef<string | null>(null);
 
-  // Track current section reactively so SectionHint gets fresh props on selection changes
-  const [currentSectionName, setCurrentSectionName] = useState<string | null>(null);
-
   useEffect(() => {
     onTextChangeRef.current = onTextChange;
   }, [onTextChange]);
@@ -146,6 +143,7 @@ export function TiptapEditor({
         },
       }),
       SlashCommand,
+      SectionHintExtension,
     ],
     content: Object.keys(content).length > 0 ? content : undefined,
     editorProps: {
@@ -168,7 +166,6 @@ export function TiptapEditor({
         const cumulativeText = extractCumulativeContext(editor);
         const sectionName = extractCurrentSectionName(editor);
         onTextChangeRef.current(cumulativeText, sectionName);
-        setCurrentSectionName(sectionName);
         onSectionNameChangeRef.current?.(sectionName);
         lastSectionNameRef.current = sectionName;
       }
@@ -177,7 +174,6 @@ export function TiptapEditor({
       if (initializingRef.current) return;
 
       const sectionName = extractCurrentSectionName(editor);
-      setCurrentSectionName(sectionName);
       onSectionNameChangeRef.current?.(sectionName);
 
       // When cursor moves to a different section, fire immediate context refresh
@@ -211,6 +207,20 @@ export function TiptapEditor({
       }
     }
   }, [editor, content]);
+
+  // Sync insightCount and onOpenPanel to extension storage for decoration rendering
+  useEffect(() => {
+    if (!editor) return;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const storage = (editor.storage as any).sectionHint as
+      | { insightCount: number; onOpenPanel: () => void }
+      | undefined;
+    if (!storage) return;
+    storage.insightCount = insightCount ?? 0;
+    storage.onOpenPanel = onOpenPanel ?? (() => {});
+    // Dispatch an empty transaction to force decoration recalculation
+    editor.view.dispatch(editor.state.tr);
+  }, [editor, insightCount, onOpenPanel]);
 
   // Cleanup debounce on unmount
   useEffect(() => {
@@ -247,14 +257,6 @@ export function TiptapEditor({
     <div className="tiptap-wrapper relative">
       <EditorContent editor={editor} />
       <SlashMenu editor={editor} />
-      {insightCount !== undefined && insightCount > 0 && onOpenPanel && (
-        <SectionHint
-          editor={editor}
-          insightCount={insightCount}
-          currentSectionName={currentSectionName}
-          onOpenPanel={onOpenPanel}
-        />
-      )}
     </div>
   );
 }
