@@ -8,7 +8,7 @@ import TaskList from "@tiptap/extension-task-list";
 import TaskItem from "@tiptap/extension-task-item";
 import Heading from "@tiptap/extension-heading";
 import Link from "@tiptap/extension-link";
-import { useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { SlashCommand, SlashMenu } from "./slash-command";
 import { InlineNudge } from "./inline-nudge";
 import type { EvidenceNudge } from "@/hooks/use-evidence-nudges";
@@ -94,6 +94,11 @@ export function TiptapEditor({
   const onTextChangeRef = useRef(onTextChange);
   const onReadyRef = useRef(onReady);
   const onEditorInstanceRef = useRef(onEditorInstance);
+  const lastSectionNameRef = useRef<string | null>(null);
+
+  // Track current section reactively so InlineNudge gets fresh props on selection changes
+  const [currentSectionName, setCurrentSectionName] = useState<string | null>(null);
+  const [sectionThin, setSectionThin] = useState(false);
 
   useEffect(() => {
     onTextChangeRef.current = onTextChange;
@@ -161,6 +166,25 @@ export function TiptapEditor({
         const sectionText = extractCurrentSection(editor);
         const sectionName = extractCurrentSectionName(editor);
         onTextChangeRef.current(sectionText, sectionName);
+        setCurrentSectionName(sectionName);
+        setSectionThin(isSectionThin(editor));
+        lastSectionNameRef.current = sectionName;
+      }
+    },
+    onSelectionUpdate: ({ editor }) => {
+      if (initializingRef.current) return;
+
+      const sectionName = extractCurrentSectionName(editor);
+      setCurrentSectionName(sectionName);
+      setSectionThin(isSectionThin(editor));
+
+      // Only fire onTextChange when cursor moves to a different section
+      if (sectionName !== lastSectionNameRef.current) {
+        lastSectionNameRef.current = sectionName;
+        if (onTextChangeRef.current) {
+          const sectionText = extractCurrentSection(editor);
+          onTextChangeRef.current(sectionText, sectionName);
+        }
       }
     },
   });
@@ -225,8 +249,8 @@ export function TiptapEditor({
         <InlineNudge
           editor={editor}
           nudges={inlineNudges}
-          isSectionThin={isSectionThin(editor)}
-          currentSectionName={extractCurrentSectionName(editor)}
+          isSectionThin={sectionThin}
+          currentSectionName={currentSectionName}
         />
       )}
     </div>
