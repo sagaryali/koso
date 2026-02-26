@@ -115,6 +115,7 @@ export function ClusterSpecDialog({
 
       const decoder = new TextDecoder();
       const sections: { section: string; text: string }[] = [];
+      let accumulatedText = "";
 
       while (true) {
         const { done, value } = await reader.read();
@@ -127,7 +128,28 @@ export function ClusterSpecDialog({
             if (data === "[DONE]") continue;
             try {
               const parsed = JSON.parse(data);
-              if (parsed.section && parsed.text) {
+
+              if (parsed.type === "section_start") {
+                setCurrentSection(parsed.section);
+                accumulatedText = "";
+              } else if (parsed.type === "delta") {
+                accumulatedText += parsed.text;
+                // Build live preview: completed sections + current streaming section
+                const fullText = [
+                  ...sections.map((s) => `## ${s.section}\n\n${s.text}`),
+                  `## ${parsed.section}\n\n${accumulatedText}`,
+                ].join("\n\n");
+                setSpecText(fullText);
+              } else if (parsed.type === "section_complete") {
+                sections.push({ section: parsed.section, text: parsed.text });
+                setSpecSections([...sections]);
+                accumulatedText = "";
+                const fullText = sections
+                  .map((s) => `## ${s.section}\n\n${s.text}`)
+                  .join("\n\n");
+                setSpecText(fullText);
+              } else if (parsed.section && parsed.text && !parsed.type) {
+                // Backward compat: old-style { section, text } events
                 sections.push({ section: parsed.section, text: parsed.text });
                 setSpecSections([...sections]);
                 setCurrentSection(parsed.section);
@@ -135,9 +157,8 @@ export function ClusterSpecDialog({
                   .map((s) => `## ${s.section}\n\n${s.text}`)
                   .join("\n\n");
                 setSpecText(fullText);
-              } else if (parsed.text) {
-                setSpecText((prev) => prev + parsed.text);
               }
+
               if (parsed.error) throw new Error(parsed.error);
             } catch (e) {
               if (e instanceof SyntaxError) continue;

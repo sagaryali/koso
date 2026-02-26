@@ -56,6 +56,7 @@ export default function InsightsPage() {
   const [loading, setLoading] = useState(true);
   const [computing, setComputing] = useState(false);
   const [computeStep, setComputeStep] = useState<string | null>(null);
+  const [computeError, setComputeError] = useState<string | null>(null);
   const [expandedClusters, setExpandedClusters] = useState<Set<string>>(new Set());
   const [sortMode, setSortMode] = useState<SortMode>("evidence_count");
   const [searchQuery, setSearchQuery] = useState("");
@@ -136,17 +137,54 @@ export default function InsightsPage() {
 
       setLoading(false);
 
-      // Trigger cluster recomputation in background if needed
-      if (allEvidence && allEvidence.length >= 3) {
+      // Auto-compute clusters on first visit when none exist yet
+      if (allEvidence && allEvidence.length >= 3 && (!clusterData || clusterData.length === 0)) {
+        setComputing(true);
+        setComputeStep("Starting...");
         fetch("/api/clusters/compute", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ workspaceId: wsId }),
+          body: JSON.stringify({ workspaceId: wsId, force: true }),
         })
           .then(async (res) => {
-            if (res.ok) {
-              const result = await res.json();
-              if (result.completed) {
+            if (!res.ok) {
+              setComputeError("Cluster computation failed. Try the manual button.");
+              return;
+            }
+
+            const contentType = res.headers.get("content-type") || "";
+
+            if (contentType.includes("text/event-stream") && res.body) {
+              // SSE response — parse data events for progress and errors
+              const reader = res.body.getReader();
+              const decoder = new TextDecoder();
+              let hadError = false;
+
+              while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+
+                const chunk = decoder.decode(value, { stream: true });
+                for (const line of chunk.split("\n")) {
+                  if (line.startsWith("data: ")) {
+                    const data = line.slice(6);
+                    if (data === "[DONE]") continue;
+                    try {
+                      const parsed = JSON.parse(data);
+                      if (parsed.step) setComputeStep(parsed.step);
+                      if (parsed.error) {
+                        hadError = true;
+                        setComputeError(parsed.error);
+                      }
+                    } catch {
+                      // skip malformed chunks
+                    }
+                  }
+                }
+              }
+
+              if (!hadError) {
+                // Refetch clusters after computation completes
                 const { data: fresh } = await supabase
                   .from("evidence_clusters")
                   .select("*")
@@ -157,9 +195,18 @@ export default function InsightsPage() {
                   setSelectedClusterIds(new Set());
                 }
               }
+            } else {
+              // JSON response (e.g. { skipped: true }) — do nothing
             }
           })
-          .catch(() => {});
+          .catch((err) => {
+            console.error("[insights] Auto-compute failed:", err);
+            setComputeError("Cluster computation failed unexpectedly.");
+          })
+          .finally(() => {
+            setComputing(false);
+            setComputeStep(null);
+          });
       }
     }
 
@@ -550,9 +597,24 @@ export default function InsightsPage() {
           {clusters.length === 0 ? (
             <div className="flex flex-col items-center border border-border-default py-12">
               {computing ? (
-                <div className="flex items-center gap-2 text-sm text-text-tertiary">
-                  <span className="inline-block h-3 w-3 animate-pulse rounded-full bg-text-tertiary" />
-                  {computeStep || "Starting..."}
+                <div className="flex flex-col items-center gap-2">
+                  <div className="flex items-center gap-2 text-sm text-text-tertiary">
+                    <span className="inline-block h-3 w-3 animate-pulse rounded-full bg-text-tertiary" />
+                    {computeStep || "Starting..."}
+                  </div>
+                </div>
+              ) : computeError ? (
+                <div className="flex flex-col items-center gap-2">
+                  <p className="text-sm text-state-error">{computeError}</p>
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => {
+                      setComputeError(null);
+                    }}
+                  >
+                    Dismiss
+                  </Button>
                 </div>
               ) : totalEvidence < 3 ? (
                 <p className="text-sm text-text-tertiary">
@@ -571,15 +633,24 @@ export default function InsightsPage() {
                       if (!workspace) return;
                       setComputing(true);
                       setComputeStep("Starting...");
+                      setComputeError(null);
                       try {
                         const res = await fetch("/api/clusters/compute", {
                           method: "POST",
                           headers: { "Content-Type": "application/json" },
-                          body: JSON.stringify({ workspaceId: workspace.id }),
+                          body: JSON.stringify({ workspaceId: workspace.id, force: true }),
                         });
 
-                        // Handle SSE streaming for progress
-                        if (res.headers.get("content-type")?.includes("text/event-stream") && res.body) {
+                        if (!res.ok) {
+                          const errBody = await res.json().catch(() => ({}));
+                          setComputeError(errBody.error || `Server error (${res.status})`);
+                          return;
+                        }
+
+                        const contentType = res.headers.get("content-type") || "";
+                        let hadError = false;
+
+                        if (contentType.includes("text/event-stream") && res.body) {
                           const reader = res.body.getReader();
                           const decoder = new TextDecoder();
 
@@ -595,6 +666,10 @@ export default function InsightsPage() {
                                 try {
                                   const parsed = JSON.parse(data);
                                   if (parsed.step) setComputeStep(parsed.step);
+                                  if (parsed.error) {
+                                    hadError = true;
+                                    setComputeError(parsed.error);
+                                  }
                                 } catch {
                                   // skip malformed chunks
                                 }
@@ -603,16 +678,21 @@ export default function InsightsPage() {
                           }
                         }
 
-                        // Refetch clusters after computation
-                        const { data } = await supabase
-                          .from("evidence_clusters")
-                          .select("*")
-                          .eq("workspace_id", workspace.id)
-                          .order("evidence_count", { ascending: false });
-                        if (data) {
-                          setClusters(data);
-                          setSelectedClusterIds(new Set());
+                        if (!hadError) {
+                          // Refetch clusters after computation
+                          const { data } = await supabase
+                            .from("evidence_clusters")
+                            .select("*")
+                            .eq("workspace_id", workspace.id)
+                            .order("evidence_count", { ascending: false });
+                          if (data) {
+                            setClusters(data);
+                            setSelectedClusterIds(new Set());
+                          }
                         }
+                      } catch (err) {
+                        console.error("[insights] Compute themes failed:", err);
+                        setComputeError("Compute themes failed. Check the console for details.");
                       } finally {
                         setComputing(false);
                         setComputeStep(null);

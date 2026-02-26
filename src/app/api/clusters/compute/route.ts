@@ -12,7 +12,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const { workspaceId } = await request.json();
+    const { workspaceId, force } = await request.json();
     if (!workspaceId) {
       return NextResponse.json(
         { error: "workspaceId is required" },
@@ -20,9 +20,11 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const needsRecompute = await shouldRecompute(workspaceId);
-    if (!needsRecompute) {
-      return NextResponse.json({ skipped: true });
+    if (!force) {
+      const needsRecompute = await shouldRecompute(workspaceId);
+      if (!needsRecompute) {
+        return NextResponse.json({ skipped: true });
+      }
     }
 
     const encoder = new TextEncoder();

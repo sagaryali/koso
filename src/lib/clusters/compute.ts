@@ -176,13 +176,23 @@ export async function computeClusters(
 
     // 6. Delete old clusters, insert new ones
     onProgress?.("Saving themes...");
-    await supabase
+    const { error: deleteError } = await supabase
       .from("evidence_clusters")
       .delete()
       .eq("workspace_id", workspaceId);
 
+    if (deleteError) {
+      throw new Error(`Failed to delete old clusters: ${deleteError.message}`);
+    }
+
     if (validClusters.length > 0) {
-      await supabase.from("evidence_clusters").insert(validClusters);
+      const { error: insertError } = await supabase
+        .from("evidence_clusters")
+        .insert(validClusters);
+
+      if (insertError) {
+        throw new Error(`Failed to insert clusters: ${insertError.message}`);
+      }
     }
 
     // 7. Update log

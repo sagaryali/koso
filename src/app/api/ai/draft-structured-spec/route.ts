@@ -42,19 +42,30 @@ function createMockStream(): Response {
 
   const encoder = new TextEncoder();
   const readable = new ReadableStream({
-    start(controller) {
-      let i = 0;
-      const interval = setInterval(() => {
-        if (i >= mockSections.length) {
-          controller.enqueue(encoder.encode("data: [DONE]\n\n"));
-          controller.close();
-          clearInterval(interval);
-          return;
+    async start(controller) {
+      for (const mock of mockSections) {
+        // Emit section_start
+        controller.enqueue(
+          encoder.encode(`data: ${JSON.stringify({ type: "section_start", section: mock.section })}\n\n`)
+        );
+
+        // Simulate token-level streaming
+        const words = mock.text.split(" ");
+        for (const word of words) {
+          controller.enqueue(
+            encoder.encode(`data: ${JSON.stringify({ type: "delta", section: mock.section, text: word + " " })}\n\n`)
+          );
+          await new Promise((r) => setTimeout(r, 50));
         }
-        const data = JSON.stringify(mockSections[i]);
-        controller.enqueue(encoder.encode(`data: ${data}\n\n`));
-        i++;
-      }, 500);
+
+        // Emit section_complete
+        controller.enqueue(
+          encoder.encode(`data: ${JSON.stringify({ type: "section_complete", section: mock.section, text: mock.text })}\n\n`)
+        );
+      }
+
+      controller.enqueue(encoder.encode("data: [DONE]\n\n"));
+      controller.close();
     },
   });
 
@@ -267,23 +278,39 @@ export async function POST(request: NextRequest) {
               `Now write the content for the "${sectionName}" section.`
             );
 
-            const response = await anthropic.messages.create({
+            // Signal section start
+            controller.enqueue(
+              encoder.encode(`data: ${JSON.stringify({ type: "section_start", section: sectionName })}\n\n`)
+            );
+
+            // Stream tokens using anthropic.messages.stream()
+            let sectionText = "";
+            const stream = anthropic.messages.stream({
               model: "claude-sonnet-4-20250514",
               max_tokens: 2048,
               system: systemParts.join("\n"),
               messages: [{ role: "user", content: userParts.join("\n") }],
             });
 
-            const text =
-              response.content[0].type === "text"
-                ? response.content[0].text
-                : "";
+            for await (const event of stream) {
+              if (
+                event.type === "content_block_delta" &&
+                event.delta.type === "text_delta"
+              ) {
+                const deltaText = event.delta.text;
+                sectionText += deltaText;
+                controller.enqueue(
+                  encoder.encode(`data: ${JSON.stringify({ type: "delta", section: sectionName, text: deltaText })}\n\n`)
+                );
+              }
+            }
 
-            generatedSections.push({ section: sectionName, text });
+            generatedSections.push({ section: sectionName, text: sectionText });
 
-            // Stream the completed section
-            const data = JSON.stringify({ section: sectionName, text });
-            controller.enqueue(encoder.encode(`data: ${data}\n\n`));
+            // Signal section complete with full text
+            controller.enqueue(
+              encoder.encode(`data: ${JSON.stringify({ type: "section_complete", section: sectionName, text: sectionText })}\n\n`)
+            );
           }
 
           controller.enqueue(encoder.encode("data: [DONE]\n\n"));

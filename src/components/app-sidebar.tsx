@@ -30,6 +30,7 @@ import {
   clearActiveWorkspaceCookie,
 } from "@/lib/workspace-cookie";
 import { useCodebaseStatus } from "@/hooks/use-codebase-status";
+import { isGenerating as isSpecGenerating } from "@/lib/spec-generation-manager";
 import type { Workspace, Artifact, CodebaseConnection } from "@/types";
 
 function EvidenceFlowDialog({
@@ -285,6 +286,9 @@ export function AppSidebar({
               )}
               {specs.map((spec) => {
                 const isActive = pathname === `/editor/${spec.id}`;
+                const generating =
+                  isSpecGenerating(spec.id) ||
+                  !!sessionStorage.getItem(`koso_draft_spec_progress_${spec.id}`);
                 return (
                   <div
                     key={spec.id}
@@ -299,6 +303,9 @@ export function AppSidebar({
                     >
                       <Icon icon={File} className="shrink-0 text-text-tertiary" />
                       <span className="truncate">{spec.title}</span>
+                      {generating && (
+                        <span className="inline-block h-1.5 w-1.5 shrink-0 animate-pulse rounded-full bg-text-primary" />
+                      )}
                     </button>
                     <button
                       onClick={(e) => {
