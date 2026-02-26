@@ -775,7 +775,7 @@ export function CommandPalette({
 
   // Execute a workspace-level action (uses fetchWorkspaceOverview instead of embedding search)
   const executeWorkspaceAction = useCallback(
-    async (action: AIAction, freeformQuery: string) => {
+    async (action: AIAction, freeformQuery?: string) => {
       if (!context) return;
 
       setView("streaming");
@@ -798,7 +798,7 @@ export function CommandPalette({
       const currentDoc = {
         title: "Workspace Query",
         type: "query",
-        content: freeformQuery,
+        content: freeformQuery || "",
       };
 
       const retrievedContext: FetchedContext = {
@@ -813,7 +813,7 @@ export function CommandPalette({
         currentDoc,
         retrievedContext,
         context.workspace,
-        freeformQuery,
+        freeformQuery || "",
         undefined,
         true // concise
       );
@@ -823,7 +823,7 @@ export function CommandPalette({
         currentDoc,
         retrievedContext,
         context.workspace,
-        freeformQuery,
+        freeformQuery || "",
         undefined,
         false // detailed
       );
@@ -964,21 +964,18 @@ export function CommandPalette({
       // Quick actions — enter sub-view or execute directly
       if (item.type === "quick_action") {
         if (item.id === "qa-build-next") {
-          setSubView({ actionId: "what_to_build_next", placeholder: "Describe your product briefly for context..." });
-          setQuery("");
-          requestAnimationFrame(() => inputRef.current?.focus());
+          const action = AI_ACTIONS.find((a) => a.id === "what_to_build_next");
+          if (action) executeWorkspaceAction(action);
           return;
         }
         if (item.id === "qa-customer-struggles") {
-          setSubView({ actionId: "customer_struggles", placeholder: "Describe your product briefly for context..." });
-          setQuery("");
-          requestAnimationFrame(() => inputRef.current?.focus());
+          const action = AI_ACTIONS.find((a) => a.id === "customer_struggles");
+          if (action) executeWorkspaceAction(action);
           return;
         }
         if (item.id === "qa-unaddressed-feedback") {
-          setSubView({ actionId: "unaddressed_feedback", placeholder: "Describe your product briefly for context..." });
-          setQuery("");
-          requestAnimationFrame(() => inputRef.current?.focus());
+          const action = AI_ACTIONS.find((a) => a.id === "unaddressed_feedback");
+          if (action) executeWorkspaceAction(action);
           return;
         }
         if (item.id === "qa-research") {
