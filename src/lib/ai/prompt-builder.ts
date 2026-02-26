@@ -88,10 +88,9 @@ export function buildPrompt(
 
   systemParts.push("");
   systemParts.push(
-    "Respond in clean, readable plain text. Do not use markdown formatting characters " +
-      "like **, ##, `, or other syntax markers in your response. " +
-      "Structure your response with clear paragraphs and use dashes (-) for bullet points. " +
-      "Use numbered lists (1. 2. 3.) for sequential steps. Separate sections with blank lines and a clear label. " +
+    "Respond in clean, well-structured markdown. " +
+      "Use ## for section headings, **bold** for emphasis, and - for bullet points. " +
+      "Use numbered lists (1. 2. 3.) with correct sequential numbering. " +
       "Be specific and actionable. Never be vague or generic — ground everything in the actual document and context provided."
   );
 
