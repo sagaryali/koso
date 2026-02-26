@@ -5,7 +5,7 @@ export const HOME_TOUR: TourStep[] = [
     target: '[data-tour="sidebar-nav"]',
     title: "Navigate your workspace",
     description:
-      "Investigate research, manage evidence, connect your codebase, and adjust settings from the sidebar.",
+      "Browse insights, manage evidence, connect your codebase, and adjust settings from the sidebar.",
     position: "right",
   },
   {
@@ -19,7 +19,7 @@ export const HOME_TOUR: TourStep[] = [
     target: '[data-tour="home-insights"]',
     title: "Themes from your evidence",
     description:
-      "Your customer feedback is automatically synthesized into key themes. Use these to decide what to build next.",
+      "Your customer feedback is automatically synthesized into key themes. Visit Insights for the full view.",
     position: "bottom",
   },
   {
@@ -55,16 +55,16 @@ export const EDITOR_TOUR: TourStep[] = [
   },
   {
     target: '[data-tour="editor-content"]',
-    title: "Write your spec",
+    title: "Section-aware editing",
     description:
-      "A rich-text editor with headings, lists, code blocks, and tasks. Your work saves automatically.",
+      "Each section gets tailored context. Evidence dominates early sections like Problem; code context appears later in Requirements.",
     position: "right",
   },
   {
     target: '[data-tour="editor-panel"]',
     title: "Context panel",
     description:
-      "Related specs, customer evidence, and codebase modules appear here as you write.",
+      "Related specs, customer evidence, and codebase modules appear here — reordered based on which section you're writing.",
     position: "left",
   },
 ];

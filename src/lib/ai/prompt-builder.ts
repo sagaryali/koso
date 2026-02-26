@@ -57,6 +57,11 @@ const CODE_SPECIFIC_STRATEGIES = new Set([
   "all",
 ]);
 
+interface PriorSection {
+  heading: string;
+  text: string;
+}
+
 export function buildPrompt(
   action: AIAction | null,
   currentDoc: DocumentContext,
@@ -64,7 +69,8 @@ export function buildPrompt(
   workspace: WorkspaceContext,
   userQuery: string,
   param?: string,
-  concise?: boolean
+  concise?: boolean,
+  priorSections?: PriorSection[]
 ): { system: string; user: string } {
   // --- System prompt: product context base ---
   const systemParts: string[] = [
@@ -107,6 +113,17 @@ export function buildPrompt(
 
   // --- User prompt ---
   const userParts: string[] = [];
+
+  // Prior sections (cascading context for section drafts)
+  if (priorSections && priorSections.length > 0) {
+    userParts.push("--- Prior Sections (already written) ---");
+    userParts.push("");
+    for (const section of priorSections) {
+      userParts.push(`## ${section.heading}`);
+      userParts.push(section.text);
+      userParts.push("");
+    }
+  }
 
   // Current document
   userParts.push(`## Current Document: ${currentDoc.title} (${currentDoc.type})`);

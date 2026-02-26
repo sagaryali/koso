@@ -123,9 +123,11 @@ export async function getRelatedArtifacts(
 
 export async function assembleContext(
   query: string,
-  workspaceId: string
+  workspaceId: string,
+  sourceTypes?: string[]
 ): Promise<GroupedContext> {
   const results = await similaritySearch(query, workspaceId, {
+    sourceTypes,
     limit: 20,
     threshold: 0.1,
   });

@@ -8,6 +8,7 @@ export type ContextStrategy =
   | "market_competitors"
   | "market_feasibility"
   | "workspace_overview"
+  | "cascading"
   | "all";
 
 export type OutputMode =
@@ -16,6 +17,8 @@ export type OutputMode =
   | "stream_with_artifacts"
   | "stream_with_checklist";
 
+export type SectionRelevance = "evidence_first" | "code_first" | "balanced" | "all";
+
 export interface AIAction {
   id: string;
   label: string;
@@ -23,6 +26,7 @@ export interface AIAction {
   promptTemplate: string;
   contextStrategy: ContextStrategy;
   outputMode: OutputMode;
+  sectionRelevance?: SectionRelevance[];
   extractParam?: (input: string) => string | null;
 }
 
@@ -68,6 +72,7 @@ export const AI_ACTIONS: AIAction[] = [
     id: "summarize_feedback",
     label: "Summarize feedback about...",
     description: "Synthesize customer feedback into themes and patterns",
+    sectionRelevance: ["evidence_first"],
     promptTemplate:
       "Synthesize the customer feedback and evidence provided about \"{param}\" into a clear summary. " +
       "Include:\n" +
@@ -108,6 +113,7 @@ export const AI_ACTIONS: AIAction[] = [
     label: "Suggest edge cases",
     description:
       "Identify edge cases, error scenarios, and security concerns",
+    sectionRelevance: ["code_first", "balanced"],
     promptTemplate:
       "Review the specification and identify:\n" +
       "1. **Edge cases** — unusual but valid scenarios that need handling\n" +
@@ -140,6 +146,7 @@ export const AI_ACTIONS: AIAction[] = [
     label: "How would engineering build this?",
     description:
       "Generate a technical approach referencing specific files and modules",
+    sectionRelevance: ["code_first"],
     promptTemplate:
       "Based on the specification and the codebase context provided, generate a detailed technical approach document. " +
       "You MUST reference specific files and modules from the codebase. Include:\n\n" +
@@ -158,6 +165,7 @@ export const AI_ACTIONS: AIAction[] = [
     label: "What's the effort estimate?",
     description:
       "Estimate t-shirt size (S/M/L/XL) with reasoning based on codebase",
+    sectionRelevance: ["code_first"],
     promptTemplate:
       "Based on the specification and the codebase context provided, estimate the engineering effort. " +
       "Provide:\n\n" +
@@ -196,6 +204,20 @@ export const AI_ACTIONS: AIAction[] = [
       "Be specific and exhaustive. Reference actual file paths from the codebase context.",
     contextStrategy: "doc_with_code",
     outputMode: "stream_with_checklist",
+  },
+
+  // --- Section Draft Action ---
+
+  {
+    id: "draft_section",
+    label: "Draft this section",
+    description:
+      "Generate content for the current section using prior sections as cascading context",
+    promptTemplate:
+      "Draft the content for this section, building on everything that came before it in the spec.",
+    contextStrategy: "cascading",
+    outputMode: "stream_with_insert",
+    sectionRelevance: ["evidence_first", "code_first", "balanced"],
   },
 
   // --- Market Research Actions ---
@@ -280,6 +302,7 @@ export const AI_ACTIONS: AIAction[] = [
     label: "Who's asking for this?",
     description:
       "Surface all related customer evidence, segment requestors, and identify urgency signals",
+    sectionRelevance: ["evidence_first"],
     promptTemplate:
       "Based on the specification and all customer evidence provided, answer: who is asking for this feature?\n\n" +
       "Provide:\n" +
@@ -420,4 +443,43 @@ export function findMatchingAction(query: string): AIAction | null {
     }
   }
   return null;
+}
+
+/**
+ * Get the most relevant actions for a given section context strategy.
+ * Returns up to `limit` actions, with "Draft this section" always first.
+ */
+export function getActionsForSection(
+  contextStrategy: SectionRelevance,
+  limit: number = 5
+): AIAction[] {
+  const results: AIAction[] = [];
+
+  // Always include "Draft this section" first
+  const draftAction = AI_ACTIONS.find((a) => a.id === "draft_section");
+  if (draftAction) results.push(draftAction);
+
+  // Filter actions relevant to this section's context strategy
+  const relevant = AI_ACTIONS.filter(
+    (a) =>
+      a.id !== "draft_section" &&
+      a.contextStrategy !== "workspace_overview" &&
+      a.sectionRelevance?.includes(contextStrategy)
+  );
+
+  results.push(...relevant);
+
+  // Fill remaining slots with general actions
+  if (results.length < limit) {
+    const general = AI_ACTIONS.filter(
+      (a) =>
+        !results.includes(a) &&
+        a.contextStrategy !== "workspace_overview" &&
+        a.contextStrategy !== "market_research" &&
+        a.contextStrategy !== "market_competitors"
+    );
+    results.push(...general.slice(0, limit - results.length));
+  }
+
+  return results.slice(0, limit);
 }

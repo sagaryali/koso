@@ -36,6 +36,10 @@ import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
 import { useTourTrigger } from "@/hooks/use-tour-trigger";
 import { EDITOR_TOUR } from "@/lib/tours";
+import { getSectionConfig, type SectionConfig } from "@/lib/section-config";
+import { extractPriorSections } from "@/lib/editor-utils";
+import { getActionsForSection } from "@/lib/ai/actions";
+import { useSectionBriefing } from "@/hooks/use-section-briefing";
 import type { Artifact, ArtifactStatus, Workspace } from "@/types";
 
 const STATUS_OPTIONS: { label: string; value: ArtifactStatus }[] = [
@@ -95,6 +99,7 @@ export default function EditorPage() {
   const [isEmpty, setIsEmpty] = useState(true);
   const [currentSectionName, setCurrentSectionName] = useState<string | null>(null);
   const [panelJustOpened, setPanelJustOpened] = useState(false);
+  const [pendingActionId, setPendingActionId] = useState<string | null>(null);
   const panelHighlightRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Codebase status
@@ -138,6 +143,29 @@ export default function EditorPage() {
     workspace?.product_description ?? null
   );
 
+  // Derive section config from current section name and artifact type
+  const currentSectionConfig: SectionConfig | null =
+    currentSectionName
+      ? getSectionConfig(currentSectionName, artifact?.type ?? undefined)
+      : null;
+
+  // Section briefing for proactive guidance
+  const priorSectionsForBriefing =
+    editorRef.current && currentSectionName
+      ? extractPriorSections(editorRef.current).map((s) => ({
+          heading: s.heading,
+          text: s.text,
+        }))
+      : [];
+
+  const { briefing: sectionBriefing } = useSectionBriefing(
+    artifact?.workspace_id ?? "",
+    currentSectionName,
+    currentSectionConfig?.guidance ?? null,
+    priorSectionsForBriefing,
+    workspace?.product_description ?? null
+  );
+
   // Derived insight count for the section hint
   const insightCount =
     contextResults.customerEvidence.length +
@@ -148,7 +176,10 @@ export default function EditorPage() {
     (cumulativeText: string, sectionName: string | null) => {
       const fullText = editorRef.current?.getText() ?? "";
       setIsEmpty(fullText.length < 50);
-      triggerSearch(cumulativeText);
+      const config = sectionName
+        ? getSectionConfig(sectionName, artifact?.type ?? undefined)
+        : undefined;
+      triggerSearch(cumulativeText, config);
       triggerMarketSearch(cumulativeText);
       if (hasCodebase && artifact) {
         triggerAssessment(cumulativeText, title || artifact.title, artifact.type);
@@ -160,10 +191,18 @@ export default function EditorPage() {
   const handleSectionChange = useCallback(
     (cumulativeText: string, sectionName: string | null) => {
       // Context panel search is already debounced; trigger immediate on section nav
-      triggerSearch(cumulativeText);
+      const config = sectionName
+        ? getSectionConfig(sectionName, artifact?.type ?? undefined)
+        : undefined;
+      triggerSearch(cumulativeText, config);
     },
-    [triggerSearch]
+    [triggerSearch, artifact]
   );
+
+  const handleDraftSection = useCallback(() => {
+    setPendingActionId("draft_section");
+    setCommandOpen(true);
+  }, []);
 
   const handleOpenPanel = useCallback(() => {
     setPanelOpen(true);
@@ -469,6 +508,17 @@ export default function EditorPage() {
               editorTextRef.current ||
               extractTextFromTiptapJSON(artifact.content),
           },
+          currentSection:
+            currentSectionName && editorRef.current
+              ? {
+                  name: currentSectionName,
+                  contextStrategy:
+                    currentSectionConfig?.contextStrategy ?? "balanced",
+                  priorSections: extractPriorSections(editorRef.current).map(
+                    (s) => ({ heading: s.heading, text: s.text })
+                  ),
+                }
+              : undefined,
         }
       : null;
 
@@ -594,6 +644,26 @@ export default function EditorPage() {
             </Button>
           </div>
 
+          {/* Section action toolbar */}
+          {currentSectionConfig && currentSectionName && (
+            <div className="mt-3 flex items-center gap-1.5" data-tour="editor-section-actions">
+              {getActionsForSection(currentSectionConfig.contextStrategy, 4).map(
+                (action) => (
+                  <button
+                    key={action.id}
+                    onClick={() => {
+                      setPendingActionId(action.id);
+                      setCommandOpen(true);
+                    }}
+                    className="cursor-pointer border border-border-default bg-bg-primary px-2 py-1 text-xs text-text-secondary hover:border-border-strong hover:text-text-primary"
+                  >
+                    {action.label}
+                  </button>
+                )
+              )}
+            </div>
+          )}
+
           {/* Divider */}
           <div className="mt-6 border-t border-border-default" />
 
@@ -610,6 +680,8 @@ export default function EditorPage() {
               onSectionNameChange={setCurrentSectionName}
               insightCount={insightCount}
               onOpenPanel={handleOpenPanel}
+              briefing={sectionBriefing}
+              onDraftSection={handleDraftSection}
             />
           </div>
 
@@ -648,6 +720,7 @@ export default function EditorPage() {
             codebaseStatus={codebaseConnection?.status ?? null}
             productName={workspace?.name ?? null}
             currentSectionName={currentSectionName}
+            sectionConfig={currentSectionConfig}
             panelJustOpened={panelJustOpened}
             onInsertCitation={handleInsertCitation}
           />
@@ -672,6 +745,8 @@ export default function EditorPage() {
         context={paletteContext}
         onInsertBelow={handleInsertBelow}
         onCreateArtifacts={handleCreateArtifacts}
+        pendingActionId={pendingActionId}
+        onActionConsumed={() => setPendingActionId(null)}
       />
 
       {/* Save as Evidence Dialog */}

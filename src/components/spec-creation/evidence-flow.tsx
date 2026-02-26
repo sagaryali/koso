@@ -131,11 +131,14 @@ export function EvidenceFlow({
   );
   const [codeContext, setCodeContext] = useState<CodeContext | null>(null);
 
-  // Step 3: Spec draft
+  // Step 3: Spec draft (structured sections)
   const [specText, setSpecText] = useState("");
+  const [specSections, setSpecSections] = useState<{ section: string; text: string }[]>([]);
   const [specStreaming, setSpecStreaming] = useState(false);
-  const [showRefine, setShowRefine] = useState(false);
-  const [refinementText, setRefinementText] = useState("");
+  const [currentStreamingSection, setCurrentStreamingSection] = useState<string | null>(null);
+  const [refiningSectionIndex, setRefiningSectionIndex] = useState<number | null>(null);
+  const [sectionRefinementText, setSectionRefinementText] = useState("");
+  const [sectionRefineStreaming, setSectionRefineStreaming] = useState(false);
   const specAbortRef = useRef<AbortController | null>(null);
 
   // Load evidence on mount
@@ -299,8 +302,10 @@ export function EvidenceFlow({
     async (refinement?: string) => {
       setStep(3);
       setSpecText("");
+      setSpecSections([]);
       setSpecStreaming(true);
-      setShowRefine(false);
+      setCurrentStreamingSection(null);
+      setRefiningSectionIndex(null);
 
       const feedbackStrings = feedbackItems.map((f) => f.content);
       const selectedThemes = clusters
@@ -334,7 +339,8 @@ export function EvidenceFlow({
         const controller = new AbortController();
         specAbortRef.current = controller;
 
-        const res = await fetch("/api/ai/draft-spec", {
+        // Try structured endpoint first, fall back to plain draft
+        const res = await fetch("/api/ai/draft-structured-spec", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(body),
@@ -343,35 +349,104 @@ export function EvidenceFlow({
 
         if (!res.ok) throw new Error("Draft-spec request failed");
 
-        streamFromResponse(
-          res,
-          (chunk) => setSpecText((prev) => prev + chunk),
-          () => setSpecStreaming(false),
-          (err) => {
-            console.error("[evidence-flow] Stream error:", err);
-            setSpecStreaming(false);
+        const reader = res.body?.getReader();
+        if (!reader) throw new Error("No response body");
+
+        const decoder = new TextDecoder();
+        const sections: { section: string; text: string }[] = [];
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+
+          const chunk = decoder.decode(value, { stream: true });
+          const lines = chunk.split("\n");
+
+          for (const line of lines) {
+            if (line.startsWith("data: ")) {
+              const data = line.slice(6);
+              if (data === "[DONE]") continue;
+              try {
+                const parsed = JSON.parse(data);
+                if (parsed.section && parsed.text) {
+                  // Structured section response
+                  sections.push({ section: parsed.section, text: parsed.text });
+                  setSpecSections([...sections]);
+                  setCurrentStreamingSection(parsed.section);
+                  // Also build full text for fallback
+                  const fullText = sections
+                    .map((s) => `## ${s.section}\n\n${s.text}`)
+                    .join("\n\n");
+                  setSpecText(fullText);
+                } else if (parsed.text) {
+                  // Plain text chunk (fallback)
+                  setSpecText((prev) => prev + parsed.text);
+                }
+                if (parsed.error) throw new Error(parsed.error);
+              } catch (e) {
+                if (e instanceof SyntaxError) continue;
+                throw e;
+              }
+            }
           }
-        );
+        }
+
+        setSpecStreaming(false);
+        setCurrentStreamingSection(null);
       } catch (err) {
         if (err instanceof DOMException && err.name === "AbortError") return;
         console.error("[evidence-flow] Draft-spec error:", err);
         setSpecStreaming(false);
+        setCurrentStreamingSection(null);
       }
     },
     [workspace, feedbackItems, clusters, selectedClusterIndices, codeContext]
   );
 
   async function handleCreateSpec() {
-    if (!specText.trim()) return;
+    if (specSections.length === 0 && !specText.trim()) return;
 
-    const content = textToTiptap(specText);
+    // Build structured TipTap document from sections
+    let content;
+    if (specSections.length > 0) {
+      const nodes: { type: string; attrs?: Record<string, unknown>; content?: { type: string; text: string }[] }[] = [];
+      for (const section of specSections) {
+        nodes.push({
+          type: "heading",
+          attrs: { level: 2 },
+          content: [{ type: "text", text: section.section }],
+        });
+        const paragraphs = section.text.trim().split("\n\n").filter(Boolean);
+        for (const para of paragraphs) {
+          if (para.startsWith("### ")) {
+            nodes.push({
+              type: "heading",
+              attrs: { level: 3 },
+              content: [{ type: "text", text: para.slice(4) }],
+            });
+          } else {
+            nodes.push({
+              type: "paragraph",
+              content: [{ type: "text", text: para }],
+            });
+          }
+        }
+      }
+      content = { type: "doc", content: nodes };
+    } else {
+      content = textToTiptap(specText);
+    }
+
+    // Derive title from first theme
+    const firstTheme = clusters.find((_, i) => selectedClusterIndices.has(i));
+    const title = firstTheme ? firstTheme.label : "Untitled Spec";
 
     const { data: artifact } = await supabase
       .from("artifacts")
       .insert({
         workspace_id: workspaceId,
         type: "prd",
-        title: "Investigation Spec",
+        title,
         content,
         status: "draft",
       })
@@ -394,11 +469,94 @@ export function EvidenceFlow({
     }
   }
 
-  function handleRefine() {
-    if (!refinementText.trim()) return;
-    draftSpec(refinementText.trim());
-    setRefinementText("");
-  }
+  const refineSingleSection = useCallback(
+    async (sectionIndex: number, refinement: string) => {
+      if (!refinement.trim()) return;
+      setSectionRefineStreaming(true);
+      setCurrentStreamingSection(specSections[sectionIndex]?.section ?? null);
+
+      const feedbackStrings = feedbackItems.map((f) => f.content);
+      const selectedThemes = clusters
+        .filter((_, i) => selectedClusterIndices.has(i))
+        .map((cluster) => ({
+          label: cluster.label,
+          summary: cluster.summary,
+          feedback: cluster.items.map((idx) => feedbackStrings[idx] || ""),
+        }));
+
+      try {
+        const res = await fetch("/api/ai/draft-structured-spec", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            themes: selectedThemes,
+            product: {
+              name: workspace.name,
+              description: workspace.product_description,
+              principles: workspace.principles,
+            },
+            codeContext: codeContext || undefined,
+            targetSection: specSections[sectionIndex].section,
+            existingSections: specSections,
+            refinement,
+          }),
+        });
+
+        if (!res.ok) throw new Error("Refinement request failed");
+
+        const reader = res.body?.getReader();
+        if (!reader) throw new Error("No response body");
+
+        const decoder = new TextDecoder();
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+
+          const chunk = decoder.decode(value, { stream: true });
+          const lines = chunk.split("\n");
+
+          for (const line of lines) {
+            if (line.startsWith("data: ")) {
+              const data = line.slice(6);
+              if (data === "[DONE]") continue;
+              try {
+                const parsed = JSON.parse(data);
+                if (parsed.section && parsed.text) {
+                  setSpecSections((prev) => {
+                    const updated = [...prev];
+                    const idx = updated.findIndex((s) => s.section === parsed.section);
+                    if (idx >= 0) {
+                      updated[idx] = { section: parsed.section, text: parsed.text };
+                    }
+                    return updated;
+                  });
+                  // Update full text
+                  setSpecSections((prev) => {
+                    const fullText = prev.map((s) => `## ${s.section}\n\n${s.text}`).join("\n\n");
+                    setSpecText(fullText);
+                    return prev;
+                  });
+                }
+                if (parsed.error) throw new Error(parsed.error);
+              } catch (e) {
+                if (e instanceof SyntaxError) continue;
+                throw e;
+              }
+            }
+          }
+        }
+      } catch (err) {
+        console.error("[evidence-flow] Section refine error:", err);
+      } finally {
+        setSectionRefineStreaming(false);
+        setCurrentStreamingSection(null);
+        setRefiningSectionIndex(null);
+        setSectionRefinementText("");
+      }
+    },
+    [workspace, feedbackItems, clusters, selectedClusterIndices, codeContext, specSections]
+  );
 
   // --- Render ---
 
@@ -623,22 +781,95 @@ export function EvidenceFlow({
       {/* ========== STEP 3: Spec Draft ========== */}
       {step === 3 && (
         <div>
-          <div className="max-h-[400px] overflow-y-auto text-text-primary">
-            {specText ? (
-              <StreamedMarkdown text={specText} />
-            ) : (
-              !specStreaming && (
-                <p className="text-[15px] text-text-tertiary">
-                  No content generated.
-                </p>
-              )
-            )}
+          <div className="max-h-[400px] space-y-4 overflow-y-auto">
+            {specSections.length > 0 ? (
+              specSections.map((section, i) => {
+                const isSectionStreaming =
+                  (specStreaming && currentStreamingSection === section.section) ||
+                  (sectionRefineStreaming && currentStreamingSection === section.section);
+                const isRefining = refiningSectionIndex === i;
+
+                return (
+                  <div
+                    key={section.section}
+                    className="border-b border-border-default pb-4 last:border-0"
+                  >
+                    <h3 className="text-sm font-semibold text-text-primary">
+                      {section.section}
+                    </h3>
+                    <div className="mt-2 text-sm text-text-secondary">
+                      <StreamedMarkdown text={section.text} />
+                      {isSectionStreaming && (
+                        <span className="inline-block h-4 w-1 animate-pulse bg-text-primary" />
+                      )}
+                    </div>
+                    {!specStreaming && !sectionRefineStreaming && !isRefining && (
+                      <button
+                        onClick={() => {
+                          setRefiningSectionIndex(i);
+                          setSectionRefinementText("");
+                        }}
+                        className="mt-2 cursor-pointer text-xs text-text-tertiary hover:text-text-secondary"
+                      >
+                        Refine
+                      </button>
+                    )}
+                    {isRefining && !sectionRefineStreaming && (
+                      <div className="mt-2 flex items-center gap-2">
+                        <input
+                          type="text"
+                          value={sectionRefinementText}
+                          onChange={(e) => setSectionRefinementText(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter" && sectionRefinementText.trim()) {
+                              refineSingleSection(i, sectionRefinementText.trim());
+                            }
+                          }}
+                          placeholder={`e.g. add more detail about...`}
+                          className="flex-1 border border-border-default bg-bg-primary px-2 py-1.5 text-xs text-text-primary placeholder:text-text-tertiary focus:border-border-strong focus:outline-none"
+                          autoFocus
+                        />
+                        <Button
+                          variant="primary"
+                          size="sm"
+                          onClick={() => refineSingleSection(i, sectionRefinementText.trim())}
+                          disabled={!sectionRefinementText.trim()}
+                        >
+                          Refine
+                        </Button>
+                        <button
+                          onClick={() => setRefiningSectionIndex(null)}
+                          className="cursor-pointer text-xs text-text-tertiary hover:text-text-secondary"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                );
+              })
+            ) : specText ? (
+              <div className="text-text-primary">
+                <StreamedMarkdown text={specText} />
+              </div>
+            ) : !specStreaming ? (
+              <p className="text-[15px] text-text-tertiary">
+                No content generated.
+              </p>
+            ) : null}
+
+            {/* Streaming indicator for sections not yet started */}
             {specStreaming && (
-              <span className="inline-block h-4 w-1 animate-pulse bg-text-primary" />
+              <div className="flex items-center gap-2 py-2 text-xs text-text-tertiary">
+                <span className="inline-block h-3 w-3 animate-pulse rounded-full bg-text-tertiary" />
+                {currentStreamingSection
+                  ? `Writing ${currentStreamingSection}...`
+                  : "Preparing draft..."}
+              </div>
             )}
           </div>
 
-          {!specStreaming && specText && (
+          {!specStreaming && !sectionRefineStreaming && (specSections.length > 0 || specText) && (
             <div className="mt-5 flex items-center gap-3">
               <Button variant="primary" size="sm" onClick={handleCreateSpec}>
                 Create as spec
@@ -646,35 +877,12 @@ export function EvidenceFlow({
               <Button
                 variant="secondary"
                 size="sm"
-                onClick={() => setShowRefine(true)}
+                onClick={() => draftSpec()}
               >
-                Refine
+                Regenerate all
               </Button>
               <Button variant="ghost" size="sm" onClick={() => setStep(2)}>
                 Back
-              </Button>
-            </div>
-          )}
-
-          {showRefine && (
-            <div className="mt-3 flex items-center gap-2">
-              <input
-                type="text"
-                value={refinementText}
-                onChange={(e) => setRefinementText(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") handleRefine();
-                }}
-                placeholder="e.g. focus more on enterprise users"
-                className="flex-1 border border-border-default bg-bg-primary px-3 py-2 text-sm text-text-primary placeholder:text-text-tertiary focus:border-border-strong focus:outline-none"
-              />
-              <Button
-                variant="primary"
-                size="sm"
-                onClick={handleRefine}
-                disabled={!refinementText.trim()}
-              >
-                Regenerate
               </Button>
             </div>
           )}

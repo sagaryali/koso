@@ -22,6 +22,7 @@ import {
   Archive,
   Search,
   Settings,
+  Lightbulb,
   FileText,
   Globe,
   Scale,
@@ -40,7 +41,7 @@ import type { LucideIcon } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { Icon } from "./icon";
-import { AI_ACTIONS, type AIAction } from "@/lib/ai/actions";
+import { AI_ACTIONS, type AIAction, type SectionRelevance } from "@/lib/ai/actions";
 import { buildPrompt } from "@/lib/ai/prompt-builder";
 import { streamCompletion } from "@/lib/ai/stream";
 import { createClient } from "@/lib/supabase/client";
@@ -73,6 +74,11 @@ export interface CommandPaletteContext {
     type: string;
     content: string; // Markdown serialized from editor
   };
+  currentSection?: {
+    name: string;
+    contextStrategy: SectionRelevance;
+    priorSections: { heading: string; text: string }[];
+  };
 }
 
 interface CommandPaletteProps {
@@ -83,6 +89,8 @@ interface CommandPaletteProps {
   onCreateArtifacts?: (stories: { title: string; content: string }[]) => void;
   onNewArtifact?: () => void;
   onAddEvidence?: () => void;
+  pendingActionId?: string | null;
+  onActionConsumed?: () => void;
 }
 
 type PaletteView = "actions" | "streaming" | "result";
@@ -384,6 +392,8 @@ export function CommandPalette({
   onCreateArtifacts,
   onNewArtifact,
   onAddEvidence,
+  pendingActionId,
+  onActionConsumed,
 }: CommandPaletteProps) {
   const router = useRouter();
   const supabase = createClient();
@@ -453,20 +463,20 @@ export function CommandPalette({
         onSelect: () => router.push("/home"),
       },
       {
+        id: "nav-insights",
+        label: "Go to Insights",
+        description: "View evidence themes and clusters",
+        type: "navigate",
+        icon: Lightbulb,
+        onSelect: () => router.push("/insights"),
+      },
+      {
         id: "nav-evidence",
         label: "Go to Evidence",
         description: "Navigate to the evidence page",
         type: "navigate",
         icon: Archive,
         onSelect: () => router.push("/evidence"),
-      },
-      {
-        id: "nav-investigate",
-        label: "Go to Investigate",
-        description: "Navigate to the investigate page",
-        type: "navigate",
-        icon: Search,
-        onSelect: () => router.push("/investigate"),
       },
       {
         id: "nav-settings",
@@ -773,6 +783,99 @@ export function CommandPalette({
     [context]
   );
 
+  // Execute a cascading section draft (calls /api/ai/draft-section)
+  const executeDraftSection = useCallback(
+    async () => {
+      if (!context?.currentSection || !context.artifact) return;
+
+      const action = AI_ACTIONS.find((a) => a.id === "draft_section") ?? null;
+
+      setView("streaming");
+      setStreamedText("");
+      streamedTextRef.current = "";
+      setIsStreaming(true);
+      setActiveAction(action);
+      setError(null);
+      setResponseMode("detailed");
+      userHasScrolledUpRef.current = false;
+      cachedPromptsRef.current = null;
+
+      const abortController = new AbortController();
+      abortRef.current = abortController;
+
+      try {
+        const res = await fetch("/api/ai/draft-section", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            sectionName: context.currentSection.name,
+            priorSections: context.currentSection.priorSections,
+            sectionConfig: {
+              heading: context.currentSection.name,
+              sourceTypes: ["evidence", "artifact", "codebase_module"],
+              codeWeight: 0.4,
+              dependsOn: [],
+              guidance: "",
+              contextStrategy: context.currentSection.contextStrategy,
+            },
+            docTitle: context.artifact.title,
+            productDescription: context.workspace.productDescription,
+            principles: context.workspace.principles,
+            workspaceId: context.workspaceId,
+          }),
+          signal: abortController.signal,
+        });
+
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({ error: "Request failed" }));
+          throw new Error(err.error || `Draft section failed: ${res.status}`);
+        }
+
+        const reader = res.body?.getReader();
+        if (!reader) throw new Error("No response body");
+
+        const decoder = new TextDecoder();
+        let fullText = "";
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+
+          const chunk = decoder.decode(value, { stream: true });
+          const lines = chunk.split("\n");
+
+          for (const line of lines) {
+            if (line.startsWith("data: ")) {
+              const data = line.slice(6);
+              if (data === "[DONE]") continue;
+              try {
+                const parsed = JSON.parse(data);
+                if (parsed.text) {
+                  fullText += parsed.text;
+                  streamedTextRef.current = fullText;
+                  setStreamedText(fullText);
+                }
+                if (parsed.error) throw new Error(parsed.error);
+              } catch (e) {
+                if (e instanceof SyntaxError) continue;
+                throw e;
+              }
+            }
+          }
+        }
+
+        setIsStreaming(false);
+        setView("result");
+      } catch (err) {
+        if (err instanceof DOMException && err.name === "AbortError") return;
+        setIsStreaming(false);
+        setError(err instanceof Error ? err.message : String(err));
+        setView("result");
+      }
+    },
+    [context]
+  );
+
   // Execute a workspace-level action (uses fetchWorkspaceOverview instead of embedding search)
   const executeWorkspaceAction = useCallback(
     async (action: AIAction, freeformQuery?: string) => {
@@ -858,6 +961,31 @@ export function CommandPalette({
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [context]
   );
+
+  // Public trigger for toolbar buttons to invoke actions directly
+  const triggerAction = useCallback(
+    (actionId: string) => {
+      if (actionId === "draft_section") {
+        executeDraftSection();
+        return;
+      }
+      const action = AI_ACTIONS.find((a) => a.id === actionId) ?? null;
+      if (action?.contextStrategy === "workspace_overview") {
+        executeWorkspaceAction(action);
+      } else {
+        executeAction(action);
+      }
+    },
+    [executeDraftSection, executeAction, executeWorkspaceAction]
+  );
+
+  // Handle pending action from toolbar buttons
+  useEffect(() => {
+    if (open && pendingActionId && view === "actions") {
+      triggerAction(pendingActionId);
+      onActionConsumed?.();
+    }
+  }, [open, pendingActionId, view, triggerAction, onActionConsumed]);
 
   // Summarize all evidence (non-streaming, calls /api/ai/synthesize)
   const executeSummarizeEvidence = useCallback(async () => {
@@ -1005,6 +1133,12 @@ export function CommandPalette({
 
       // AI action
       if (item.action) {
+        // Handle cascading draft section action
+        if (item.action.id === "draft_section") {
+          executeDraftSection();
+          return;
+        }
+
         // Check if action needs a param and user hasn't provided it
         if (item.action.extractParam) {
           const param = item.action.extractParam(query);

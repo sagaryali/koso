@@ -19,7 +19,7 @@ export async function POST(request: NextRequest) {
     }
 
     if (grouped) {
-      const context = await assembleContext(query, workspaceId);
+      const context = await assembleContext(query, workspaceId, sourceTypes);
       const supabase = createAdminClient();
 
       // Parallelize all three enrichment queries

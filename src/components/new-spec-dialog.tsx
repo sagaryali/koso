@@ -110,9 +110,14 @@ export function NewSpecDialog({
       </p>
 
       <div className="mt-5 space-y-1">
-        {/* Start from evidence — prominent when evidence exists */}
+        {/* From evidence — prominent when evidence exists */}
         {hasEvidence && onStartFromEvidence && (
           <>
+            <div className="pb-1">
+              <div className="text-[11px] font-medium uppercase tracking-caps text-text-tertiary">
+                From evidence
+              </div>
+            </div>
             <button
               onClick={() => {
                 onClose();
@@ -126,22 +131,22 @@ export function NewSpecDialog({
             >
               <div className="min-w-0 flex-1">
                 <span className="text-sm font-medium text-text-primary">
-                  Start from evidence
+                  New spec from evidence
                 </span>
                 <p className="text-xs text-text-tertiary">
-                  Cluster {evidenceCount} evidence items, then draft a spec
+                  Select from {evidenceCount} evidence items, cluster themes, then draft
                 </p>
               </div>
             </button>
-            <div className="py-2">
-              <div className="text-[11px] font-medium uppercase tracking-caps text-text-tertiary">
-                Or pick a template
-              </div>
-            </div>
           </>
         )}
 
-        {/* Built-in templates */}
+        {/* From template */}
+        <div className="pt-3 pb-1">
+          <div className="text-[11px] font-medium uppercase tracking-caps text-text-tertiary">
+            From template
+          </div>
+        </div>
         {SPEC_TEMPLATES.map((template) => (
           <button
             key={template.id}
@@ -166,9 +171,9 @@ export function NewSpecDialog({
         {/* Custom templates */}
         {customTemplates.length > 0 && (
           <>
-            <div className="pt-2 pb-1">
+            <div className="pt-3 pb-1">
               <div className="text-[11px] font-medium uppercase tracking-caps text-text-tertiary">
-                Custom
+                Custom templates
               </div>
             </div>
             {customTemplates.map((template) => (

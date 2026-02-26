@@ -15,6 +15,7 @@ import {
   File,
   LogOut,
   Trash2,
+  Lightbulb,
 } from "lucide-react";
 import { Button, Icon, KosoMark } from "@/components/ui";
 import { DropdownMenu } from "@/components/ui/dropdown-menu";
@@ -73,7 +74,7 @@ interface AppSidebarProps {
 
 const navItems = [
   { label: "Home", icon: Home, href: "/home" },
-  { label: "Investigate", icon: Search, href: "/investigate" },
+  { label: "Insights", icon: Lightbulb, href: "/insights" },
   { label: "Evidence", icon: FileText, href: "/evidence" },
   { label: "Codebase", icon: Code, href: "/codebase" },
   { label: "Settings", icon: Settings, href: "/settings" },

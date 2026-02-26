@@ -23,6 +23,8 @@ interface TiptapEditorProps {
   onSectionNameChange?: (name: string | null) => void;
   insightCount?: number;
   onOpenPanel?: () => void;
+  briefing?: { suggestedTopics: string[]; summary: string; inconsistencies: string[] } | null;
+  onDraftSection?: () => void;
 }
 
 function extractCumulativeContext(editor: Editor): string {
@@ -80,6 +82,8 @@ export function TiptapEditor({
   onSectionNameChange,
   insightCount,
   onOpenPanel,
+  briefing,
+  onDraftSection,
 }: TiptapEditorProps) {
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const contentInitialized = useRef(false);
@@ -208,19 +212,26 @@ export function TiptapEditor({
     }
   }, [editor, content]);
 
-  // Sync insightCount and onOpenPanel to extension storage for decoration rendering
+  // Sync insightCount, onOpenPanel, briefing, and onDraftSection to extension storage
   useEffect(() => {
     if (!editor) return;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const storage = (editor.storage as any).sectionHint as
-      | { insightCount: number; onOpenPanel: () => void }
+      | {
+          insightCount: number;
+          onOpenPanel: () => void;
+          briefing: { suggestedTopics: string[]; summary: string; inconsistencies: string[] } | null;
+          onDraftSection: () => void;
+        }
       | undefined;
     if (!storage) return;
     storage.insightCount = insightCount ?? 0;
     storage.onOpenPanel = onOpenPanel ?? (() => {});
+    storage.briefing = briefing ?? null;
+    storage.onDraftSection = onDraftSection ?? (() => {});
     // Dispatch an empty transaction to force decoration recalculation
     editor.view.dispatch(editor.state.tr);
-  }, [editor, insightCount, onOpenPanel]);
+  }, [editor, insightCount, onOpenPanel, briefing, onDraftSection]);
 
   // Cleanup debounce on unmount
   useEffect(() => {

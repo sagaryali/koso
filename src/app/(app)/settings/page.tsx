@@ -576,27 +576,6 @@ export default function SettingsPage() {
                 );
               })}
 
-              {/* Architecture summary — show once for all repos */}
-              {archSummary && connections.some((c) => c.status === "ready") && (
-                <div className="border border-border-default p-6">
-                  <button
-                    onClick={() => setArchExpanded(!archExpanded)}
-                    className="flex w-full cursor-pointer items-center gap-1 text-sm font-medium text-text-primary"
-                  >
-                    <Icon
-                      icon={archExpanded ? ChevronDown : ChevronRight}
-                      className="text-text-tertiary"
-                    />
-                    Architecture Summary
-                  </button>
-                  {archExpanded && (
-                    <div className="mt-3 max-h-[400px] overflow-y-auto bg-bg-secondary p-4 text-sm whitespace-pre-wrap text-text-secondary">
-                      {archSummary}
-                    </div>
-                  )}
-                </div>
-              )}
-
               {/* Add another repo */}
               <div className="flex items-center gap-2">
                 <Button

@@ -2,6 +2,8 @@
 
 import { useState, useRef, useCallback, useEffect } from "react";
 import type { ContextSearchResult } from "@/types";
+import type { SectionConfig } from "@/lib/section-config";
+import { getResultAllocations } from "@/lib/section-config";
 
 export interface ContextPanelResults {
   relatedSpecs: ContextSearchResult[];
@@ -46,7 +48,7 @@ export function useContextPanel(workspaceId: string, artifactId: string) {
   const cacheRef = useRef<Map<number, ContextPanelResults>>(new Map());
 
   const executeSearch = useCallback(
-    async (text: string) => {
+    async (text: string, sectionConfig?: SectionConfig) => {
       if (!text.trim() || !workspaceId) return;
 
       const hash = simpleHash(text);
@@ -66,10 +68,21 @@ export function useContextPanel(workspaceId: string, artifactId: string) {
       setLoading(true);
 
       try {
+        const body: Record<string, unknown> = {
+          query: text,
+          workspaceId,
+          grouped: true,
+        };
+
+        // Pass sourceTypes when section config is available
+        if (sectionConfig?.sourceTypes) {
+          body.sourceTypes = sectionConfig.sourceTypes;
+        }
+
         const res = await fetch("/api/search", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ query: text, workspaceId, grouped: true }),
+          body: JSON.stringify(body),
           signal: controller.signal,
         });
 
@@ -78,14 +91,25 @@ export function useContextPanel(workspaceId: string, artifactId: string) {
         const data = await res.json();
         const ctx = data.results;
 
+        // Get allocations based on section config
+        const allocations = sectionConfig
+          ? getResultAllocations(sectionConfig.codeWeight)
+          : { evidence: 8, code: 8, specs: 3 };
+
         const newResults: ContextPanelResults = {
           relatedSpecs: deduplicateBySource(
             (ctx.artifacts ?? []).filter(
               (r: ContextSearchResult) => r.sourceId !== artifactId
             )
+          ).slice(0, allocations.specs),
+          customerEvidence: deduplicateBySource(ctx.evidence ?? []).slice(
+            0,
+            allocations.evidence
           ),
-          customerEvidence: deduplicateBySource(ctx.evidence ?? []),
-          codeContext: deduplicateBySource(ctx.codebaseModules ?? []),
+          codeContext: deduplicateBySource(ctx.codebaseModules ?? []).slice(
+            0,
+            allocations.code
+          ),
         };
 
         cacheRef.current.set(hash, newResults);
@@ -101,16 +125,19 @@ export function useContextPanel(workspaceId: string, artifactId: string) {
   );
 
   const triggerSearch = useCallback(
-    (text: string) => {
+    (text: string, sectionConfig?: SectionConfig) => {
       if (debounceRef.current) clearTimeout(debounceRef.current);
-      debounceRef.current = setTimeout(() => executeSearch(text), 1000);
+      debounceRef.current = setTimeout(
+        () => executeSearch(text, sectionConfig),
+        1000
+      );
     },
     [executeSearch]
   );
 
   const searchImmediate = useCallback(
-    (text: string) => {
-      executeSearch(text);
+    (text: string, sectionConfig?: SectionConfig) => {
+      executeSearch(text, sectionConfig);
     },
     [executeSearch]
   );

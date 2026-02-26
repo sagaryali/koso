@@ -8,6 +8,7 @@ import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
 import type { ContextSearchResult, MarketSearchResult, Evidence } from "@/types";
 import type { SeededSpec, SeededCodeModule, SeededContextData } from "@/hooks/use-seeded-context";
+import type { SectionConfig } from "@/lib/section-config";
 
 interface ContextPanelProps {
   relatedSpecs: ContextSearchResult[];
@@ -26,6 +27,7 @@ interface ContextPanelProps {
   codebaseStatus: string | null;
   productName: string | null;
   currentSectionName?: string | null;
+  sectionConfig?: SectionConfig | null;
   panelJustOpened?: boolean;
   onInsertCitation?: (text: string, source: string) => void;
 }
@@ -444,6 +446,7 @@ export function ContextPanel({
   codebaseStatus,
   productName,
   currentSectionName,
+  sectionConfig,
   panelJustOpened,
   onInsertCitation,
 }: ContextPanelProps) {
@@ -558,8 +561,120 @@ export function ContextPanel({
     );
   }
 
+  // Determine section ordering based on codeWeight
+  const codeWeight = sectionConfig?.codeWeight ?? 0.4;
+  const isCodeFirst = codeWeight > 0.6;
+  const isEvidenceFirst = codeWeight < 0.3;
+
+  // Section header reflects context strategy
+  const headerLabel = currentSectionName
+    ? isEvidenceFirst
+      ? `Evidence for: ${currentSectionName}`
+      : isCodeFirst
+        ? `Code context for: ${currentSectionName}`
+        : `Context for: ${currentSectionName}`
+    : "Context";
+
   // Search-driven view (existing behavior)
   const hasCodeResults = codeContext.length > 0;
+
+  // Build orderable content sections
+  const evidenceSection = (
+    <section key="evidence">
+      <SectionLabel>Customer Evidence</SectionLabel>
+      <SectionDivider />
+      <div className="mt-3 space-y-3">
+        {loading ? (
+          <Skeleton variant="list" lines={3} />
+        ) : customerEvidence.length > 0 ? (
+          <StaggeredList>
+            {customerEvidence.map((r, i) => (
+              <StaggerItem key={r.id} index={i}>
+                <EvidenceCard result={r} onInsertCitation={onInsertCitation} />
+              </StaggerItem>
+            ))}
+          </StaggeredList>
+        ) : (
+          <p className="text-sm text-text-tertiary">
+            Add customer feedback, metrics, or research notes to build your product knowledge base
+          </p>
+        )}
+      </div>
+    </section>
+  );
+
+  const codeSection = (
+    <section key="code">
+      <SectionLabel>Code Context</SectionLabel>
+      <SectionDivider />
+      <div className="mt-3 space-y-2">
+        {loading ? (
+          <Skeleton variant="list" lines={2} />
+        ) : hasCodeResults ? (
+          <StaggeredList>
+            {codeContext.map((r, i) => (
+              <StaggerItem key={r.id} index={i}>
+                <CodeModuleCard result={r} />
+              </StaggerItem>
+            ))}
+          </StaggeredList>
+        ) : !hasCodebase ? (
+          <div className="flex items-start gap-2 text-xs text-text-tertiary">
+            <Icon icon={Code} size={14} className="mt-0.5 shrink-0" />
+            <span>
+              Connect a GitHub repo in{" "}
+              <a
+                href="/settings"
+                className="text-text-primary underline underline-offset-2"
+              >
+                Settings
+              </a>{" "}
+              to see relevant code here
+            </span>
+          </div>
+        ) : (
+          <p className="text-sm text-text-tertiary">
+            Start writing and related context will appear here
+          </p>
+        )}
+      </div>
+    </section>
+  );
+
+  const specsSection = (
+    <section key="specs">
+      <SectionLabel>Related Specs</SectionLabel>
+      <SectionDivider />
+      <div className="mt-3 space-y-2">
+        {loading ? (
+          <Skeleton variant="list" lines={3} />
+        ) : relatedSpecs.length > 0 ? (
+          <StaggeredList>
+            {relatedSpecs.map((r, i) => (
+              <StaggerItem key={r.id} index={i}>
+                <RelatedSpecCard
+                  result={r}
+                  artifactId={artifactId}
+                  workspaceId={workspaceId}
+                />
+              </StaggerItem>
+            ))}
+          </StaggeredList>
+        ) : (
+          <p className="text-sm text-text-tertiary">
+            Start writing and related specs will appear here
+          </p>
+        )}
+      </div>
+    </section>
+  );
+
+  // Order sections by codeWeight
+  const contentSections = isCodeFirst
+    ? [codeSection, evidenceSection, specsSection]
+    : isEvidenceFirst
+      ? [evidenceSection, specsSection, codeSection]
+      : [specsSection, evidenceSection, codeSection];
 
   return (
     <div className="space-y-6 p-6">
@@ -571,101 +686,22 @@ export function ContextPanel({
             panelJustOpened ? "text-text-primary" : "text-text-tertiary"
           )}
         >
-          {currentSectionName
-            ? `Context for: ${currentSectionName}`
-            : "Context"}
+          {headerLabel}
         </div>
         {hasCodeResults && (
           <Icon icon={Code} size={12} className="text-text-tertiary" />
         )}
       </div>
 
-      {/* Related Specs */}
-      <section>
-        <SectionLabel>Related Specs</SectionLabel>
-        <SectionDivider />
-        <div className="mt-3 space-y-2">
-          {loading ? (
-            <Skeleton variant="list" lines={3} />
-          ) : relatedSpecs.length > 0 ? (
-            <StaggeredList>
-              {relatedSpecs.map((r, i) => (
-                <StaggerItem key={r.id} index={i}>
-                  <RelatedSpecCard
-                    result={r}
-                    artifactId={artifactId}
-                    workspaceId={workspaceId}
-                  />
-                </StaggerItem>
-              ))}
-            </StaggeredList>
-          ) : (
-            <p className="text-sm text-text-tertiary">
-              Start writing and related specs will appear here
-            </p>
-          )}
+      {/* Section guidance hint */}
+      {sectionConfig && sectionConfig.guidance && (
+        <div className="text-xs text-text-tertiary italic">
+          {sectionConfig.guidance}
         </div>
-      </section>
+      )}
 
-      {/* Customer Evidence */}
-      <section>
-        <SectionLabel>Customer Evidence</SectionLabel>
-        <SectionDivider />
-        <div className="mt-3 space-y-3">
-          {loading ? (
-            <Skeleton variant="list" lines={3} />
-          ) : customerEvidence.length > 0 ? (
-            <StaggeredList>
-              {customerEvidence.map((r, i) => (
-                <StaggerItem key={r.id} index={i}>
-                  <EvidenceCard result={r} onInsertCitation={onInsertCitation} />
-                </StaggerItem>
-              ))}
-            </StaggeredList>
-          ) : (
-            <p className="text-sm text-text-tertiary">
-              Add customer feedback, metrics, or research notes to build your product knowledge base
-            </p>
-          )}
-        </div>
-      </section>
-
-      {/* Code Context */}
-      <section>
-        <SectionLabel>Code Context</SectionLabel>
-        <SectionDivider />
-        <div className="mt-3 space-y-2">
-          {loading ? (
-            <Skeleton variant="list" lines={2} />
-          ) : hasCodeResults ? (
-            <StaggeredList>
-              {codeContext.map((r, i) => (
-                <StaggerItem key={r.id} index={i}>
-                  <CodeModuleCard result={r} />
-                </StaggerItem>
-              ))}
-            </StaggeredList>
-          ) : !hasCodebase ? (
-            <div className="flex items-start gap-2 text-xs text-text-tertiary">
-              <Icon icon={Code} size={14} className="mt-0.5 shrink-0" />
-              <span>
-                Connect a GitHub repo in{" "}
-                <a
-                  href="/settings"
-                  className="text-text-primary underline underline-offset-2"
-                >
-                  Settings
-                </a>{" "}
-                to see relevant code here
-              </span>
-            </div>
-          ) : (
-            <p className="text-sm text-text-tertiary">
-              Start writing and related context will appear here
-            </p>
-          )}
-        </div>
-      </section>
+      {/* Ordered content sections */}
+      {contentSections}
 
       {/* Market Signals */}
       <section>

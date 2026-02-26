@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
-import { Code, Check, Circle, X } from "lucide-react";
+import { Code, Check, Circle, X, ArrowRight } from "lucide-react";
 import { Button, Input, Badge, Icon, Skeleton } from "@/components/ui";
 import { toast } from "@/components/ui/toast";
 import { cn } from "@/lib/utils";
@@ -436,57 +436,6 @@ export default function HomePage() {
     }
   }
 
-  // ── Start spec from insights ───────────────────────────────────
-  async function handleStartSpecFromInsights() {
-    if (!workspace || !synthesis || synthesis.length === 0) return;
-
-    const themeNodes = synthesis.flatMap((t) => [
-      {
-        type: "heading" as const,
-        attrs: { level: 3 },
-        content: [{ type: "text" as const, text: t.theme }],
-      },
-      {
-        type: "paragraph" as const,
-        content: [{ type: "text" as const, text: t.detail }],
-      },
-    ]);
-
-    const tiptapContent = {
-      type: "doc",
-      content: [
-        {
-          type: "heading",
-          attrs: { level: 2 },
-          content: [{ type: "text", text: "Problem Statement" }],
-        },
-        ...themeNodes,
-      ],
-    };
-
-    const { data } = await supabase
-      .from("artifacts")
-      .insert({
-        workspace_id: workspace.id,
-        type: "prd",
-        title: "Spec from Evidence Themes",
-        content: tiptapContent,
-        status: "draft",
-      })
-      .select()
-      .single();
-
-    if (data) {
-      fetch("/api/embeddings/index", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ sourceId: data.id, sourceType: "artifact" }),
-      }).catch(() => {});
-
-      router.push(`/editor/${data.id}`);
-    }
-  }
-
   // ── Create spec (from checklist) ──────────────────────────────
   function handleCreateSpec() {
     if (!workspace) return;
@@ -667,44 +616,42 @@ export default function HomePage() {
         </div>
       )}
 
-      {/* 2. Insights card */}
+      {/* 2. Insights summary (compact) */}
       {evidenceCount > 0 && (
-        <div className="mt-10 border border-border-default bg-bg-secondary p-6" data-tour="home-insights">
-          <h2 className="text-lg font-medium">Themes from your evidence</h2>
+        <div className="mt-10 border border-border-default bg-bg-secondary p-5" data-tour="home-insights">
+          <div className="flex items-center justify-between">
+            <h2 className="text-sm font-medium text-text-primary">
+              Themes from your evidence
+            </h2>
+            <button
+              onClick={() => router.push("/insights")}
+              className="flex cursor-pointer items-center gap-1 text-xs text-text-secondary hover:text-text-primary"
+            >
+              View all insights
+              <Icon icon={ArrowRight} size={12} />
+            </button>
+          </div>
 
           {synthesisLoading ? (
             <div className="mt-3">
-              <Skeleton variant="text" />
-              <div className="mt-2">
-                <Skeleton variant="text" width="80%" />
-              </div>
-              <div className="mt-2">
-                <Skeleton variant="text" width="60%" />
-              </div>
+              <Skeleton variant="text" width="60%" />
             </div>
           ) : synthesis && synthesis.length > 0 ? (
-            <>
-              <div className="mt-4 space-y-4">
-                {synthesis.map((t, i) => (
-                  <div key={i}>
-                    <div className="text-sm font-medium text-text-primary">
-                      {t.theme}
-                    </div>
-                    <p className="mt-1 text-sm text-text-secondary">
-                      {t.detail}
-                    </p>
-                  </div>
-                ))}
-              </div>
-              <Button
-                variant="secondary"
-                size="sm"
-                className="mt-6"
-                onClick={handleStartSpecFromInsights}
-              >
-                Start a spec from this
-              </Button>
-            </>
+            <div className="mt-3 flex flex-wrap gap-2">
+              {synthesis.slice(0, 4).map((t, i) => (
+                <span
+                  key={i}
+                  className="bg-bg-tertiary px-2 py-1 text-xs text-text-secondary"
+                >
+                  {t.theme}
+                </span>
+              ))}
+              {synthesis.length > 4 && (
+                <span className="px-2 py-1 text-xs text-text-tertiary">
+                  +{synthesis.length - 4} more
+                </span>
+              )}
+            </div>
           ) : null}
         </div>
       )}

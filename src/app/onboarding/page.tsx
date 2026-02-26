@@ -1,19 +1,24 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import { useState, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Button, Input, TextArea, KosoWordmark } from "@/components/ui";
+import { Button, Input, TextArea, KosoWordmark, Skeleton } from "@/components/ui";
+import { StreamedMarkdown } from "@/components/ui/streamed-markdown";
 import { FeedbackList } from "@/components/evidence/feedback-list";
+import { RepoPicker } from "@/components/codebase/repo-picker";
+import { toast } from "@/components/ui/toast";
 import { createClient } from "@/lib/supabase/client";
 import { setActiveWorkspaceCookie } from "@/lib/workspace-cookie";
 import { parseFeedback, type FeedbackItem } from "@/lib/parse-feedback";
+import { cn } from "@/lib/utils";
+import type { GitHubRepo } from "@/types";
 
-type Step = 1 | 2 | 3 | 4;
+type Step = 1 | 2 | 3 | 4 | 5;
 
 function ProgressDots({ current }: { current: Step }) {
   return (
     <div className="flex items-center justify-center gap-2">
-      {[1, 2, 3, 4].map((step) => (
+      {[1, 2, 3, 4, 5].map((step) => (
         <div
           key={step}
           className={`h-2 w-2 ${
@@ -25,14 +30,25 @@ function ProgressDots({ current }: { current: Step }) {
   );
 }
 
+interface SpecSection {
+  section: string;
+  text: string;
+}
+
 export default function OnboardingPage() {
   const [step, setStep] = useState<Step>(1);
   const [productName, setProductName] = useState("");
   const [productDescription, setProductDescription] = useState("");
-  const [existingSpec, setExistingSpec] = useState("");
   const [creating, setCreating] = useState(false);
 
-  // Feedback step state
+  // Step 2: Codebase
+  const [codebaseConnected, setCodebaseConnected] = useState(false);
+  const [githubAuthed, setGithubAuthed] = useState(false);
+  const [repoPickerOpen, setRepoPickerOpen] = useState(false);
+  const [connectingRepo, setConnectingRepo] = useState(false);
+  const [connectedRepoName, setConnectedRepoName] = useState<string | null>(null);
+
+  // Step 3: Feedback
   const [rawFeedback, setRawFeedback] = useState("");
   const [feedbackItems, setFeedbackItems] = useState<FeedbackItem[]>([]);
   const [feedbackParsed, setFeedbackParsed] = useState(false);
@@ -42,26 +58,27 @@ export default function OnboardingPage() {
   const [showSynthesis, setShowSynthesis] = useState(false);
   const [synthesizing, setSynthesizing] = useState(false);
 
-  const synthTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Step 4: First Spec
+  const [specSections, setSpecSections] = useState<SpecSection[]>([]);
+  const [specStreaming, setSpecStreaming] = useState(false);
+  const [currentStreamingSection, setCurrentStreamingSection] = useState<string | null>(null);
+  const [specCreated, setSpecCreated] = useState(false);
+
+  // Summary stats
+  const [moduleCount, setModuleCount] = useState(0);
+
   const router = useRouter();
   const searchParams = useSearchParams();
   const supabase = createClient();
 
-  // Resume at step 4 if returning from GitHub OAuth
+  // Resume at step 2 with repo picker if returning from GitHub OAuth
   useEffect(() => {
     if (searchParams.get("github") === "connected") {
-      setStep(4);
+      setGithubAuthed(true);
+      setStep(2);
+      setRepoPickerOpen(true);
     }
   }, [searchParams]);
-
-  // Clean up synthesis auto-advance timer
-  useEffect(() => {
-    return () => {
-      if (synthTimerRef.current) {
-        clearTimeout(synthTimerRef.current);
-      }
-    };
-  }, []);
 
   function handleParseFeedback() {
     const items = parseFeedback(rawFeedback);
@@ -99,7 +116,7 @@ export default function OnboardingPage() {
 
   async function handleSynthesizeFeedback() {
     if (feedbackItems.length === 0) {
-      setStep(3);
+      setStep(5);
       return;
     }
 
@@ -117,29 +134,125 @@ export default function OnboardingPage() {
         const { synthesis: result } = await res.json();
         setSynthesis(result);
         setShowSynthesis(true);
-
-        // Auto-advance after 3.5 seconds
-        synthTimerRef.current = setTimeout(() => {
-          setStep(3);
-          setShowSynthesis(false);
-        }, 3500);
-      } else {
-        setStep(3);
       }
     } catch {
-      setStep(3);
+      // Continue without synthesis
     } finally {
       setSynthesizing(false);
     }
   }
 
-  function handleAdvanceFromSynthesis() {
-    if (synthTimerRef.current) {
-      clearTimeout(synthTimerRef.current);
-      synthTimerRef.current = null;
+  async function handleTurnIntoSpec() {
+    if (!synthesis || synthesis.length === 0) return;
+
+    setStep(4);
+    setSpecSections([]);
+    setSpecStreaming(true);
+    setCurrentStreamingSection(null);
+
+    const themes = synthesis.map((t) => ({
+      label: t.theme,
+      summary: t.detail,
+      feedback: feedbackItems.map((f) => f.content),
+    }));
+
+    try {
+      const res = await fetch("/api/ai/draft-structured-spec", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          themes,
+          product: {
+            name: productName,
+            description: productDescription,
+          },
+        }),
+      });
+
+      if (!res.ok) throw new Error("Draft failed");
+
+      const reader = res.body?.getReader();
+      if (!reader) throw new Error("No response body");
+
+      const decoder = new TextDecoder();
+      const sections: SpecSection[] = [];
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        const chunk = decoder.decode(value, { stream: true });
+        const lines = chunk.split("\n");
+
+        for (const line of lines) {
+          if (line.startsWith("data: ")) {
+            const data = line.slice(6);
+            if (data === "[DONE]") continue;
+            try {
+              const parsed = JSON.parse(data);
+              if (parsed.section && parsed.text) {
+                sections.push({ section: parsed.section, text: parsed.text });
+                setSpecSections([...sections]);
+                setCurrentStreamingSection(parsed.section);
+              }
+              if (parsed.error) throw new Error(parsed.error);
+            } catch (e) {
+              if (e instanceof SyntaxError) continue;
+              throw e;
+            }
+          }
+        }
+      }
+    } catch (err) {
+      console.error("[onboarding] Spec draft error:", err);
+    } finally {
+      setSpecStreaming(false);
+      setCurrentStreamingSection(null);
     }
+  }
+
+  function handleSaveEvidenceAndContinue() {
     setShowSynthesis(false);
-    setStep(3);
+    setStep(5);
+  }
+
+  function handleConnectGitHub() {
+    sessionStorage.setItem("koso_onboarding", "true");
+    window.location.href = "/api/auth/github?return_to=/onboarding";
+  }
+
+  async function handleSelectRepo(repo: GitHubRepo) {
+    setRepoPickerOpen(false);
+    setConnectingRepo(true);
+
+    try {
+      const res = await fetch("/api/codebase/connect", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          repoFullName: repo.full_name,
+          repoUrl: repo.html_url,
+          defaultBranch: repo.default_branch,
+        }),
+      });
+
+      if (!res.ok && res.status !== 409) {
+        const data = await res.json().catch(() => ({ error: "Unknown error" }));
+        toast({ message: `Failed to connect: ${data.error || "Unknown error"}` });
+        setConnectingRepo(false);
+        return;
+      }
+
+      setCodebaseConnected(true);
+      setConnectingRepo(false);
+      setConnectedRepoName(repo.full_name);
+
+      // Show success state briefly, then advance
+      setTimeout(() => setStep(3), 2000);
+    } catch {
+      toast({ message: "Failed to connect repository. Try again." });
+      setConnectingRepo(false);
+    }
   }
 
   async function handleFinish() {
@@ -160,7 +273,6 @@ export default function OnboardingPage() {
     let workspaceId: string;
 
     if (existing && existing.length > 0) {
-      // Update existing workspace
       await supabase
         .from("workspaces")
         .update({
@@ -170,7 +282,6 @@ export default function OnboardingPage() {
         .eq("id", existing[0].id);
       workspaceId = existing[0].id;
     } else {
-      // Create new workspace
       const { data: ws } = await supabase
         .from("workspaces")
         .insert({
@@ -184,66 +295,6 @@ export default function OnboardingPage() {
 
       if (!ws) return;
       workspaceId = ws.id;
-    }
-
-    // If they pasted a spec, create an artifact from it
-    if (existingSpec.trim()) {
-      const { data: artifact } = await supabase
-        .from("artifacts")
-        .insert({
-          workspace_id: workspaceId,
-          type: "prd",
-          title: `${productName.trim() || "Product"} Spec`,
-          content: {
-            type: "doc",
-            content: existingSpec
-              .trim()
-              .split("\n\n")
-              .filter(Boolean)
-              .map((para) => {
-                if (para.startsWith("# ")) {
-                  return {
-                    type: "heading",
-                    attrs: { level: 1 },
-                    content: [{ type: "text", text: para.slice(2) }],
-                  };
-                }
-                if (para.startsWith("## ")) {
-                  return {
-                    type: "heading",
-                    attrs: { level: 2 },
-                    content: [{ type: "text", text: para.slice(3) }],
-                  };
-                }
-                if (para.startsWith("### ")) {
-                  return {
-                    type: "heading",
-                    attrs: { level: 3 },
-                    content: [{ type: "text", text: para.slice(4) }],
-                  };
-                }
-                return {
-                  type: "paragraph",
-                  content: [{ type: "text", text: para }],
-                };
-              }),
-          },
-          status: "draft",
-        })
-        .select("id")
-        .single();
-
-      // Fire-and-forget: embed the artifact
-      if (artifact) {
-        fetch("/api/embeddings/index", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            sourceId: artifact.id,
-            sourceType: "artifact",
-          }),
-        }).catch(() => {});
-      }
     }
 
     // Insert feedback items into evidence table
@@ -264,7 +315,6 @@ export default function OnboardingPage() {
           .single();
 
         if (evidenceData?.id) {
-          // Fire-and-forget: embed this evidence
           fetch("/api/embeddings/index", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -277,14 +327,60 @@ export default function OnboardingPage() {
       }
     }
 
+    // Create spec artifact from structured sections (if drafted)
+    if (specSections.length > 0) {
+      const nodes: { type: string; attrs?: Record<string, unknown>; content?: { type: string; text: string }[] }[] = [];
+      for (const section of specSections) {
+        nodes.push({
+          type: "heading",
+          attrs: { level: 2 },
+          content: [{ type: "text", text: section.section }],
+        });
+        const paragraphs = section.text.trim().split("\n\n").filter(Boolean);
+        for (const para of paragraphs) {
+          if (para.startsWith("### ")) {
+            nodes.push({
+              type: "heading",
+              attrs: { level: 3 },
+              content: [{ type: "text", text: para.slice(4) }],
+            });
+          } else {
+            nodes.push({
+              type: "paragraph",
+              content: [{ type: "text", text: para }],
+            });
+          }
+        }
+      }
+
+      const { data: artifact } = await supabase
+        .from("artifacts")
+        .insert({
+          workspace_id: workspaceId,
+          type: "prd",
+          title: `${productName.trim() || "Product"} Spec`,
+          content: { type: "doc", content: nodes },
+          status: "draft",
+        })
+        .select("id")
+        .single();
+
+      if (artifact) {
+        fetch("/api/embeddings/index", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            sourceId: artifact.id,
+            sourceType: "artifact",
+          }),
+        }).catch(() => {});
+        setSpecCreated(true);
+      }
+    }
+
     setActiveWorkspaceCookie(workspaceId);
     router.push("/home");
     router.refresh();
-  }
-
-  function handleConnectGitHub() {
-    sessionStorage.setItem("koso_onboarding", "true");
-    window.location.href = "/api/auth/github?return_to=/onboarding";
   }
 
   return (
@@ -327,8 +423,71 @@ export default function OnboardingPage() {
           </div>
         )}
 
-        {/* Step 2: Customer feedback */}
+        {/* Step 2: Connect codebase */}
         {step === 2 && (
+          <div className="mt-10">
+            <h1 className="text-center text-2xl font-bold tracking-tight">
+              Connect your codebase
+            </h1>
+            <p className="mt-2 text-center text-sm text-text-secondary">
+              Link a GitHub repo so we can assess what&apos;s easy vs hard to build.
+              Code context makes your specs more grounded.
+            </p>
+            <p className="mt-1 text-center text-xs text-text-tertiary">
+              We&apos;ll index your codebase in the background. You can always do
+              this later in Settings.
+            </p>
+
+            {connectedRepoName ? (
+              <div className="mt-8">
+                <div className="border border-border-default bg-bg-secondary p-5 text-center">
+                  <p className="text-sm font-medium text-text-primary">
+                    Connected to {connectedRepoName}
+                  </p>
+                  <div className="mt-2 flex items-center justify-center gap-2 text-xs text-text-secondary">
+                    <span className="inline-block h-2 w-2 animate-pulse bg-text-primary" />
+                    Indexing started — code context will appear as you write specs
+                  </div>
+                </div>
+              </div>
+            ) : connectingRepo ? (
+              <div className="mt-8 flex items-center justify-center gap-2 text-sm text-text-secondary">
+                <span className="inline-block h-2 w-2 animate-pulse bg-text-primary" />
+                Connecting repository...
+              </div>
+            ) : githubAuthed ? (
+              <div className="mt-8 flex flex-col gap-3">
+                <Button
+                  variant="secondary"
+                  onClick={() => setRepoPickerOpen(true)}
+                >
+                  Pick a repository
+                </Button>
+                <Button
+                  variant="ghost"
+                  onClick={() => setStep(3)}
+                >
+                  Skip for now
+                </Button>
+              </div>
+            ) : (
+              <div className="mt-8 flex flex-col gap-3">
+                <Button variant="secondary" onClick={handleConnectGitHub}>
+                  Connect GitHub
+                </Button>
+                <Button
+                  variant="ghost"
+                  onClick={() => setStep(3)}
+                >
+                  Skip for now
+                </Button>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Step 3: Customer feedback */}
+        {step === 3 && (
           <div className="mt-10">
             <h1 className="text-center text-2xl font-bold tracking-tight">
               Got customer feedback?
@@ -338,28 +497,40 @@ export default function OnboardingPage() {
               responses. We&apos;ll help you spot patterns.
             </p>
 
-            {/* Sub-state: Synthesis display */}
+            {/* Sub-state: Synthesis display — stays visible until user acts */}
             {showSynthesis && synthesis && (
               <div className="mt-8">
                 <div className="border border-border-default bg-bg-secondary p-6">
                   <p className="text-sm font-medium">What we&apos;re hearing</p>
-                  <div className="mt-2 space-y-3">
+                  <div className="mt-3 space-y-3">
                     {synthesis.map((t, i) => (
-                      <div key={i}>
-                        <p className="text-base font-medium">{t.theme}</p>
-                        <p className="text-sm text-text-secondary">
+                      <div
+                        key={i}
+                        className="border border-border-default bg-bg-primary p-3"
+                      >
+                        <div className="flex items-center gap-2">
+                          <p className="text-sm font-medium">{t.theme}</p>
+                        </div>
+                        <p className="mt-1 text-xs text-text-secondary">
                           {t.detail}
                         </p>
                       </div>
                     ))}
                   </div>
                 </div>
-                <div className="mt-8">
+                <div className="mt-6 flex gap-3">
                   <Button
-                    className="w-full"
-                    onClick={handleAdvanceFromSynthesis}
+                    className="flex-1"
+                    onClick={handleTurnIntoSpec}
                   >
-                    Continue
+                    Turn this into a spec
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    className="flex-1"
+                    onClick={handleSaveEvidenceAndContinue}
+                  >
+                    Save evidence & continue
                   </Button>
                 </div>
               </div>
@@ -377,7 +548,7 @@ export default function OnboardingPage() {
                   <Button
                     variant="ghost"
                     className="flex-1"
-                    onClick={() => setStep(3)}
+                    onClick={() => setStep(5)}
                   >
                     Skip
                   </Button>
@@ -410,7 +581,7 @@ export default function OnboardingPage() {
                   <Button
                     variant="ghost"
                     className="flex-1"
-                    onClick={() => setStep(3)}
+                    onClick={() => setStep(5)}
                   >
                     Skip
                   </Button>
@@ -427,72 +598,108 @@ export default function OnboardingPage() {
           </div>
         )}
 
-        {/* Step 3: Paste a spec */}
-        {step === 3 && (
+        {/* Step 4: First Spec (structured draft) */}
+        {step === 4 && (
           <div className="mt-10">
             <h1 className="text-center text-2xl font-bold tracking-tight">
-              Got an existing spec?
+              Your first spec
             </h1>
             <p className="mt-2 text-center text-sm text-text-secondary">
-              Paste your most recent PRD or product doc. This helps the AI
-              understand your product faster.
+              We&apos;re drafting a spec from your evidence, section by section.
             </p>
-            <div className="mt-8">
-              <TextArea
-                placeholder="Paste your spec here..."
-                value={existingSpec}
-                onChange={(e) => setExistingSpec(e.target.value)}
-                className="min-h-[200px]"
-              />
+
+            <div className="mt-6 max-h-[400px] space-y-4 overflow-y-auto border border-border-default bg-bg-secondary p-4">
+              {specSections.map((section) => {
+                const isStreaming =
+                  specStreaming && currentStreamingSection === section.section;
+                return (
+                  <div
+                    key={section.section}
+                    className="border-b border-border-default pb-3 last:border-0"
+                  >
+                    <h3 className="text-xs font-semibold text-text-primary">
+                      {section.section}
+                    </h3>
+                    <div className="mt-1 text-xs text-text-secondary">
+                      <StreamedMarkdown text={section.text} />
+                      {isStreaming && (
+                        <span className="inline-block h-3 w-0.5 animate-pulse bg-text-primary" />
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+              {specStreaming && (
+                <div className="flex items-center gap-2 py-2 text-xs text-text-tertiary">
+                  <span className="inline-block h-3 w-3 animate-pulse rounded-full bg-text-tertiary" />
+                  {currentStreamingSection
+                    ? `Writing ${currentStreamingSection}...`
+                    : "Preparing draft..."}
+                </div>
+              )}
             </div>
-            <div className="mt-8 flex gap-3">
-              <Button
-                variant="ghost"
-                className="flex-1"
-                onClick={() => setStep(4)}
-              >
-                Skip
-              </Button>
-              <Button
-                className="flex-1"
-                onClick={() => setStep(4)}
-                disabled={!existingSpec.trim()}
-              >
-                Add & Continue
-              </Button>
+
+            <div className="mt-6 flex gap-3">
+              {!specStreaming && specSections.length > 0 ? (
+                <>
+                  <Button className="flex-1" onClick={() => setStep(5)}>
+                    Create spec & finish
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    className="flex-1"
+                    onClick={() => {
+                      setSpecSections([]);
+                      setStep(5);
+                    }}
+                  >
+                    Skip
+                  </Button>
+                </>
+              ) : specStreaming ? null : (
+                <Button
+                  variant="ghost"
+                  className="w-full"
+                  onClick={() => setStep(5)}
+                >
+                  Skip
+                </Button>
+              )}
             </div>
           </div>
         )}
 
-        {/* Step 4: Connect your code */}
-        {step === 4 && (
+        {/* Step 5: Done */}
+        {step === 5 && (
           <div className="mt-10">
             <h1 className="text-center text-2xl font-bold tracking-tight">
-              Connect your codebase
+              You&apos;re all set
             </h1>
             <p className="mt-2 text-center text-sm text-text-secondary">
-              Link a GitHub repo so the AI can assess technical feasibility as
-              you write specs.
+              {productName.trim() || "Your product"} is set up
+              {feedbackItems.length > 0 &&
+                ` with ${feedbackItems.length} evidence item${feedbackItems.length !== 1 ? "s" : ""}`}
+              {codebaseConnected && ` and a connected codebase`}
+              {specSections.length > 0 && ` and a draft spec`}.
             </p>
-            <p className="mt-1 text-center text-xs text-text-tertiary">
-              We&apos;ll index your codebase in the background. You&apos;ll see
-              code context once it&apos;s ready.
-            </p>
-            <div className="mt-8 flex flex-col gap-3">
-              <Button variant="secondary" onClick={handleConnectGitHub}>
-                Connect GitHub
-              </Button>
+            <div className="mt-8">
               <Button
-                variant="ghost"
+                className="w-full"
                 onClick={handleFinish}
                 disabled={creating}
               >
-                {creating ? "Setting up..." : "Skip for now"}
+                {creating ? "Setting up..." : "Go to dashboard"}
               </Button>
             </div>
           </div>
         )}
       </div>
+
+      <RepoPicker
+        open={repoPickerOpen}
+        onClose={() => setRepoPickerOpen(false)}
+        onSelect={handleSelectRepo}
+      />
     </div>
   );
 }
