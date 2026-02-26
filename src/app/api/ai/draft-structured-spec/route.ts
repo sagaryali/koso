@@ -77,7 +77,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const { themes, product, codeContext, templateId, targetSection, existingSections, refinement } = await request.json();
+    const { themes, product, codeContext, templateId, targetSection, existingSections, refinement, completedSections } = await request.json();
 
     if (!themes || !Array.isArray(themes) || themes.length === 0) {
       return new Response(
@@ -189,12 +189,17 @@ export async function POST(request: NextRequest) {
     }
 
     // --- Full spec generation mode ---
-    const generatedSections: { section: string; text: string }[] = [];
+
+    // Seed with any previously completed sections (for resume after interruption)
+    const generatedSections: { section: string; text: string }[] =
+      Array.isArray(completedSections) ? [...completedSections] : [];
+    const skipSet = new Set(generatedSections.map((s) => s.section));
 
     const readable = new ReadableStream({
       async start(controller) {
         try {
           for (const sectionName of SECTION_ORDER) {
+            if (skipSet.has(sectionName)) continue;
             const systemParts: string[] = [
               "You are a senior product manager drafting a spec section by section.",
               `Write ONLY the content for the "${sectionName}" section. Do NOT include the heading.`,

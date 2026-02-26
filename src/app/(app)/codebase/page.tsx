@@ -9,7 +9,7 @@ import {
   ChevronRight,
   RefreshCw,
 } from "lucide-react";
-import { Button, Input, Icon, Badge, Skeleton } from "@/components/ui";
+import { Button, Input, Icon, Badge, Skeleton, Tooltip } from "@/components/ui";
 import { cn } from "@/lib/utils";
 import { createClient } from "@/lib/supabase/client";
 import { useWorkspace } from "@/lib/workspace-context";
@@ -94,7 +94,7 @@ export default function CodebasePage() {
   const [search, setSearch] = useState("");
   const [modulesLoading, setModulesLoading] = useState(false);
   const [archSummary, setArchSummary] = useState<string | null>(null);
-  const [archExpanded, setArchExpanded] = useState(true);
+  const [archExpanded, setArchExpanded] = useState(false);
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
   const [resyncing, setResyncing] = useState(false);
 
@@ -287,7 +287,10 @@ export default function CodebasePage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Codebase</h1>
-          <p className="mt-1 text-sm text-text-tertiary">
+          <p className="mt-1 text-sm text-text-secondary">
+            Your connected repositories, indexed for context-aware specs.
+          </p>
+          <p className="mt-1 text-xs text-text-tertiary">
             {modules.length} modules across{" "}
             {readyConnections.map((c) => c.repo_name).join(", ")}
           </p>
@@ -408,9 +411,14 @@ export default function CodebasePage() {
                           </span>
                         ))}
                         {hasTests && (
-                          <span className="bg-emerald-100 px-1.5 py-0.5 text-[10px] text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-400">
-                            Has tests
-                          </span>
+                          <Tooltip
+                            content="Contains test or spec files (.test., .spec., __tests__)"
+                            position="bottom"
+                          >
+                            <span className="bg-bg-tertiary px-1.5 py-0.5 text-[10px] text-text-tertiary">
+                              Tested
+                            </span>
+                          </Tooltip>
                         )}
                       </div>
                     </div>

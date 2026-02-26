@@ -8,6 +8,7 @@ import { Icon } from "@/components/ui/icon";
 import { Dialog } from "@/components/ui/dialog";
 import { StreamedMarkdown } from "@/components/ui/streamed-markdown";
 import { textToTiptap } from "@/lib/text-to-tiptap";
+import { sectionsToTiptapDoc } from "@/lib/sections-to-tiptap";
 import { createClient } from "@/lib/supabase/client";
 import type { Evidence, Workspace } from "@/types";
 
@@ -407,35 +408,10 @@ export function EvidenceFlow({
     if (specSections.length === 0 && !specText.trim()) return;
 
     // Build structured TipTap document from sections
-    let content;
-    if (specSections.length > 0) {
-      const nodes: { type: string; attrs?: Record<string, unknown>; content?: { type: string; text: string }[] }[] = [];
-      for (const section of specSections) {
-        nodes.push({
-          type: "heading",
-          attrs: { level: 2 },
-          content: [{ type: "text", text: section.section }],
-        });
-        const paragraphs = section.text.trim().split("\n\n").filter(Boolean);
-        for (const para of paragraphs) {
-          if (para.startsWith("### ")) {
-            nodes.push({
-              type: "heading",
-              attrs: { level: 3 },
-              content: [{ type: "text", text: para.slice(4) }],
-            });
-          } else {
-            nodes.push({
-              type: "paragraph",
-              content: [{ type: "text", text: para }],
-            });
-          }
-        }
-      }
-      content = { type: "doc", content: nodes };
-    } else {
-      content = textToTiptap(specText);
-    }
+    const content =
+      specSections.length > 0
+        ? sectionsToTiptapDoc(specSections)
+        : textToTiptap(specText);
 
     // Derive title from first theme
     const firstTheme = clusters.find((_, i) => selectedClusterIndices.has(i));

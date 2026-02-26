@@ -63,7 +63,10 @@ export async function shouldRecompute(
   return false;
 }
 
-export async function computeClusters(workspaceId: string): Promise<void> {
+export async function computeClusters(
+  workspaceId: string,
+  onProgress?: (step: string) => void
+): Promise<void> {
   const supabase = createAdminClient();
 
   // Mark as computing
@@ -76,6 +79,7 @@ export async function computeClusters(workspaceId: string): Promise<void> {
 
   try {
     // 1. Fetch evidence (cap at 200 most recent)
+    onProgress?.("Fetching evidence...");
     const { data: evidence, error: evidenceError } = await supabase
       .from("evidence")
       .select("id, title, content")
@@ -89,9 +93,11 @@ export async function computeClusters(workspaceId: string): Promise<void> {
     }
 
     // 2. Call Claude to group into clusters
+    onProgress?.(`Identifying patterns across ${evidence.length} items...`);
     const clusters = await clusterEvidence(evidence);
 
     // 3. For each cluster, compute centroid from member embeddings
+    onProgress?.(`Computing embeddings for ${clusters.length} themes...`);
     const clustersWithEmbeddings = await Promise.all(
       clusters.map(async (cluster) => {
         const memberIds = cluster.items
@@ -123,6 +129,7 @@ export async function computeClusters(workspaceId: string): Promise<void> {
 
     // 4. Assign section relevance scores
     if (validClusters.length > 0 && !isDemoMode()) {
+      onProgress?.("Scoring section relevance...");
       const relevanceScores = await computeSectionRelevance(
         validClusters.map((c) => ({ label: c.label, summary: c.summary }))
       );
@@ -136,6 +143,7 @@ export async function computeClusters(workspaceId: string): Promise<void> {
     }
 
     // 5. Delete old clusters, insert new ones
+    onProgress?.("Saving themes...");
     await supabase
       .from("evidence_clusters")
       .delete()
@@ -150,6 +158,7 @@ export async function computeClusters(workspaceId: string): Promise<void> {
   } catch (err) {
     console.error("[clusters] Computation failed:", err);
     await updateLog(workspaceId, "failed", 0);
+    throw err;
   }
 }
 

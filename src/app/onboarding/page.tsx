@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import { Button, Input, TextArea, KosoWordmark } from "@/components/ui";
 import { FeedbackList } from "@/components/evidence/feedback-list";
 import { RepoPicker } from "@/components/codebase/repo-picker";
@@ -10,6 +10,7 @@ import { createClient } from "@/lib/supabase/client";
 import { setActiveWorkspaceCookie } from "@/lib/workspace-cookie";
 import { parseFeedback, type FeedbackItem } from "@/lib/parse-feedback";
 import { SAMPLE_FEEDBACK_ITEMS, SAMPLE_EVIDENCE_TAG } from "@/lib/sample-feedback";
+import { placeholderSpecDoc, sectionsToTiptapDoc } from "@/lib/sections-to-tiptap";
 import { useCodebaseStatus } from "@/hooks/use-codebase-status";
 import type { GitHubRepo, CodebaseConnection } from "@/types";
 
@@ -142,10 +143,7 @@ function IndexingProgress({
   );
 }
 
-interface SpecSection {
-  section: string;
-  text: string;
-}
+import type { SpecSection } from "@/lib/sections-to-tiptap";
 
 export default function OnboardingPage() {
   const [step, setStep] = useState<Step>(1);
@@ -175,7 +173,6 @@ export default function OnboardingPage() {
   // Spec sections (drafted inline before redirect)
   const [specSections, setSpecSections] = useState<SpecSection[]>([]);
 
-  const router = useRouter();
   const searchParams = useSearchParams();
   const supabase = createClient();
   const { connection: indexingConnection, refresh: refreshCodebaseStatus } = useCodebaseStatus(codebaseConnected);
@@ -268,52 +265,112 @@ export default function OnboardingPage() {
       feedback: feedbackItems.map((f) => f.content),
     }));
 
-    // Draft the spec sections
-    const sections: SpecSection[] = [];
-    try {
-      const res = await fetch("/api/ai/draft-structured-spec", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          themes,
-          product: {
-            name: productName,
-            description: productDescription,
-          },
-        }),
-      });
+    // Generation context will be stored in sessionStorage after we know the artifact ID
+    const generationContext = {
+      themes,
+      product: {
+        name: productName,
+        description: productDescription,
+      },
+    };
 
-      if (res.ok && res.body) {
-        const reader = res.body.getReader();
-        const decoder = new TextDecoder();
+    // Create workspace + evidence + placeholder artifact immediately
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    if (!user) return;
 
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
+    const { data: existing } = await supabase
+      .from("workspaces")
+      .select("id")
+      .eq("user_id", user.id)
+      .limit(1);
 
-          const chunk = decoder.decode(value, { stream: true });
-          for (const line of chunk.split("\n")) {
-            if (line.startsWith("data: ")) {
-              const data = line.slice(6);
-              if (data === "[DONE]") continue;
-              try {
-                const parsed = JSON.parse(data);
-                if (parsed.section && parsed.text) {
-                  sections.push({ section: parsed.section, text: parsed.text });
-                }
-              } catch {
-                // skip malformed chunks
-              }
-            }
-          }
-        }
-      }
-    } catch (err) {
-      console.error("[onboarding] Spec draft error:", err);
+    let workspaceId: string;
+
+    if (existing && existing.length > 0) {
+      await supabase
+        .from("workspaces")
+        .update({
+          name: productName.trim() || "My Product",
+          product_description: productDescription.trim() || null,
+        })
+        .eq("id", existing[0].id);
+      workspaceId = existing[0].id;
+    } else {
+      const { data: ws } = await supabase
+        .from("workspaces")
+        .insert({
+          user_id: user.id,
+          name: productName.trim() || "My Product",
+          product_description: productDescription.trim() || null,
+          principles: [],
+        })
+        .select("id")
+        .single();
+
+      if (!ws) return;
+      workspaceId = ws.id;
     }
 
-    // Persist everything (workspace, evidence, spec) and redirect to editor
-    await handleFinish(sections);
+    // Insert feedback items
+    if (feedbackItems.length > 0) {
+      for (const item of feedbackItems) {
+        const evidenceTitle = item.title || item.content.slice(0, 60);
+        const tags = usingSampleData ? [SAMPLE_EVIDENCE_TAG] : [];
+        const { data: evidenceData } = await supabase
+          .from("evidence")
+          .insert({
+            workspace_id: workspaceId,
+            type: "feedback" as const,
+            title: evidenceTitle,
+            content: item.content,
+            source: null,
+            tags,
+          })
+          .select("id")
+          .single();
+
+        if (evidenceData?.id) {
+          fetch("/api/embeddings/index", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              sourceId: evidenceData.id,
+              sourceType: "evidence",
+            }),
+          }).catch(() => {});
+        }
+      }
+    }
+
+    // Create artifact with placeholder section headings
+    const { data: artifact } = await supabase
+      .from("artifacts")
+      .insert({
+        workspace_id: workspaceId,
+        type: "prd",
+        title: `${productName.trim() || "Product"} Spec`,
+        content: placeholderSpecDoc(),
+        status: "draft",
+      })
+      .select("id")
+      .single();
+
+    if (artifact) {
+      sessionStorage.setItem(
+        `koso_draft_spec_context_${artifact.id}`,
+        JSON.stringify(generationContext)
+      );
+      setActiveWorkspaceCookie(workspaceId);
+      // Hard navigation to ensure the (app) layout re-fetches fresh workspace data
+      window.location.href = `/editor/${artifact.id}?generating=true`;
+      return;
+    }
+
+    // Fallback: redirect to home if artifact creation failed
+    setActiveWorkspaceCookie(workspaceId);
+    window.location.href = "/home";
   }
 
   function handleSaveEvidenceAndContinue() {
@@ -435,29 +492,7 @@ export default function OnboardingPage() {
 
     // Create spec artifact from structured sections (if drafted)
     if (sections.length > 0) {
-      const nodes: { type: string; attrs?: Record<string, unknown>; content?: { type: string; text: string }[] }[] = [];
-      for (const section of sections) {
-        nodes.push({
-          type: "heading",
-          attrs: { level: 2 },
-          content: [{ type: "text", text: section.section }],
-        });
-        const paragraphs = section.text.trim().split("\n\n").filter(Boolean);
-        for (const para of paragraphs) {
-          if (para.startsWith("### ")) {
-            nodes.push({
-              type: "heading",
-              attrs: { level: 3 },
-              content: [{ type: "text", text: para.slice(4) }],
-            });
-          } else {
-            nodes.push({
-              type: "paragraph",
-              content: [{ type: "text", text: para }],
-            });
-          }
-        }
-      }
+      const content = sectionsToTiptapDoc(sections);
 
       const { data: artifact } = await supabase
         .from("artifacts")
@@ -465,7 +500,7 @@ export default function OnboardingPage() {
           workspace_id: workspaceId,
           type: "prd",
           title: `${productName.trim() || "Product"} Spec`,
-          content: { type: "doc", content: nodes },
+          content,
           status: "draft",
         })
         .select("id")
@@ -483,15 +518,13 @@ export default function OnboardingPage() {
 
         // Redirect to the editor with the new spec
         setActiveWorkspaceCookie(workspaceId);
-        router.push(`/editor/${artifact.id}`);
-        router.refresh();
+        window.location.href = `/editor/${artifact.id}`;
         return;
       }
     }
 
     setActiveWorkspaceCookie(workspaceId);
-    router.push("/home");
-    router.refresh();
+    window.location.href = "/home";
   }
 
   return (

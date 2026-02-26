@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { ChevronDown, ChevronRight, ArrowRight } from "lucide-react";
-import { Button, Badge, Icon, Skeleton } from "@/components/ui";
+import { Button, Badge, Icon, Skeleton, Tooltip } from "@/components/ui";
 import { Dialog } from "@/components/ui";
 import { Input } from "@/components/ui";
 import { EvidenceFlow } from "@/components/spec-creation/evidence-flow";
@@ -71,6 +71,7 @@ export default function InsightsPage() {
   const [evidenceMap, setEvidenceMap] = useState<Record<string, Evidence>>({});
   const [loading, setLoading] = useState(true);
   const [computing, setComputing] = useState(false);
+  const [computeStep, setComputeStep] = useState<string | null>(null);
   const [expandedClusters, setExpandedClusters] = useState<Set<string>>(new Set());
   const [sortMode, setSortMode] = useState<SortMode>("evidence_count");
   const [searchQuery, setSearchQuery] = useState("");
@@ -375,6 +376,9 @@ export default function InsightsPage() {
     <div className="px-12 py-10 page-transition">
       <h1 className="text-2xl font-bold tracking-tight">Insights</h1>
       <p className="mt-1 text-sm text-text-secondary">
+        Themes and patterns surfaced from your evidence.
+      </p>
+      <p className="mt-1 text-xs text-text-tertiary">
         {totalEvidence} evidence items across {clusters.length} theme
         {clusters.length !== 1 ? "s" : ""}
       </p>
@@ -428,8 +432,8 @@ export default function InsightsPage() {
               { key: "newest" as SortMode, label: "Newest" },
               ...(Object.keys(effortMap).length > 0
                 ? [
-                    { key: "effort_easiest" as SortMode, label: "Easiest" },
-                    { key: "effort_hardest" as SortMode, label: "Hardest" },
+                    { key: "effort_easiest" as SortMode, label: "Low effort first" },
+                    { key: "effort_hardest" as SortMode, label: "High effort first" },
                   ]
                 : []),
             ] as { key: SortMode; label: string }[]
@@ -488,38 +492,76 @@ export default function InsightsPage() {
         <div className="mt-8">
           {clusters.length === 0 ? (
             <div className="flex flex-col items-center border border-border-default py-12">
-              <p className="text-sm text-text-tertiary">
-                {totalEvidence < 3
-                  ? "Add at least 3 evidence items to see theme clusters."
-                  : "Computing themes..."}
-              </p>
-              {totalEvidence >= 3 && !computing && (
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  className="mt-4"
-                  onClick={async () => {
-                    if (!workspace) return;
-                    setComputing(true);
-                    try {
-                      await fetch("/api/clusters/compute", {
-                        method: "POST",
-                        headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify({ workspaceId: workspace.id }),
-                      });
-                      const { data } = await supabase
-                        .from("evidence_clusters")
-                        .select("*")
-                        .eq("workspace_id", workspace.id)
-                        .order("evidence_count", { ascending: false });
-                      if (data) setClusters(data);
-                    } finally {
-                      setComputing(false);
-                    }
-                  }}
-                >
-                  Compute themes
-                </Button>
+              {computing ? (
+                <div className="flex items-center gap-2 text-sm text-text-tertiary">
+                  <span className="inline-block h-3 w-3 animate-pulse rounded-full bg-text-tertiary" />
+                  {computeStep || "Starting..."}
+                </div>
+              ) : totalEvidence < 3 ? (
+                <p className="text-sm text-text-tertiary">
+                  Add at least 3 evidence items to see theme clusters.
+                </p>
+              ) : (
+                <>
+                  <p className="text-sm text-text-tertiary">
+                    Analyze your evidence to discover recurring themes.
+                  </p>
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    className="mt-4"
+                    onClick={async () => {
+                      if (!workspace) return;
+                      setComputing(true);
+                      setComputeStep("Starting...");
+                      try {
+                        const res = await fetch("/api/clusters/compute", {
+                          method: "POST",
+                          headers: { "Content-Type": "application/json" },
+                          body: JSON.stringify({ workspaceId: workspace.id }),
+                        });
+
+                        // Handle SSE streaming for progress
+                        if (res.headers.get("content-type")?.includes("text/event-stream") && res.body) {
+                          const reader = res.body.getReader();
+                          const decoder = new TextDecoder();
+
+                          while (true) {
+                            const { done, value } = await reader.read();
+                            if (done) break;
+
+                            const chunk = decoder.decode(value, { stream: true });
+                            for (const line of chunk.split("\n")) {
+                              if (line.startsWith("data: ")) {
+                                const data = line.slice(6);
+                                if (data === "[DONE]") continue;
+                                try {
+                                  const parsed = JSON.parse(data);
+                                  if (parsed.step) setComputeStep(parsed.step);
+                                } catch {
+                                  // skip malformed chunks
+                                }
+                              }
+                            }
+                          }
+                        }
+
+                        // Refetch clusters after computation
+                        const { data } = await supabase
+                          .from("evidence_clusters")
+                          .select("*")
+                          .eq("workspace_id", workspace.id)
+                          .order("evidence_count", { ascending: false });
+                        if (data) setClusters(data);
+                      } finally {
+                        setComputing(false);
+                        setComputeStep(null);
+                      }
+                    }}
+                  >
+                    Compute themes
+                  </Button>
+                </>
               )}
             </div>
           ) : (
@@ -541,19 +583,24 @@ export default function InsightsPage() {
                               {cluster.label}
                             </h3>
                             {effort && (
-                              <span
-                                className={cn(
-                                  "px-1.5 py-0.5 text-[10px] font-medium",
+                              <Tooltip
+                                content={
                                   effort.effortLevel === "Quick Win"
-                                    ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-400"
+                                    ? "Low complexity, can be shipped fast"
                                     : effort.effortLevel === "Medium"
-                                      ? "bg-bg-tertiary text-text-secondary"
-                                      : "bg-bg-inverse text-text-inverse"
-                                )}
-                                title={effort.reason}
+                                      ? "Moderate scope, needs some planning"
+                                      : "High complexity, significant engineering work"
+                                }
+                                position="bottom"
                               >
-                                {effort.effortLevel}
-                              </span>
+                                <span className="bg-bg-tertiary px-1.5 py-0.5 text-[10px] font-medium text-text-secondary">
+                                  {effort.effortLevel === "Quick Win"
+                                    ? "Low effort"
+                                    : effort.effortLevel === "Medium"
+                                      ? "Medium effort"
+                                      : "High effort"}
+                                </span>
+                              </Tooltip>
                             )}
                             {effortLoading && !effort && (
                               <span className="h-3 w-12 animate-pulse bg-bg-tertiary" />

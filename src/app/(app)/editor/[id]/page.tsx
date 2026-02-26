@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from "react";
-import { useParams, useRouter } from "next/navigation";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import type { Editor } from "@tiptap/core";
 import {
   PanelRightClose,
@@ -23,6 +23,8 @@ import type { CommandPaletteContext } from "@/components/ui";
 import { DropdownMenu } from "@/components/ui";
 import { toast } from "@/components/ui/toast";
 import { TiptapEditor } from "@/components/editor/tiptap-editor";
+import { SpecGenerationOverlay } from "@/components/editor/spec-generation-overlay";
+import { sectionsToTiptapDoc } from "@/lib/sections-to-tiptap";
 import { ContextPanel } from "@/components/panels/context-panel";
 import { FeasibilityPanel } from "@/components/panels/FeasibilityPanel";
 import { AddEvidenceDialog } from "@/components/evidence/add-evidence-dialog";
@@ -74,6 +76,7 @@ function extractTextFromTiptapJSON(doc: Record<string, unknown>): string {
 export default function EditorPage() {
   const params = useParams();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const id = params.id as string;
   const supabase = createClient();
 
@@ -82,6 +85,17 @@ export default function EditorPage() {
   const [artifact, setArtifact] = useState<Artifact | null>(null);
   const [workspace, setWorkspace] = useState<Workspace | null>(null);
   const [loading, setLoading] = useState(true);
+  const [isGenerating, setIsGenerating] = useState(() => {
+    if (searchParams.get("generating") === "true") return true;
+    // Also check sessionStorage — handles navigating away and coming back
+    if (typeof window !== "undefined") {
+      return (
+        sessionStorage.getItem(`koso_draft_spec_context_${id}`) !== null ||
+        sessionStorage.getItem(`koso_draft_spec_progress_${id}`) !== null
+      );
+    }
+    return false;
+  });
   const [title, setTitle] = useState("");
   const [panelOpen, setPanelOpen] = useState(true);
   const [commandOpen, setCommandOpen] = useState(false);
@@ -326,6 +340,35 @@ export default function EditorPage() {
         .catch(() => {
           toast({ message: "Embeddings failed to update. Will retry on next save." });
         });
+    },
+    [id]
+  );
+
+  const handleGenerationComplete = useCallback(
+    (sections: { section: string; text: string }[]) => {
+      const content = sectionsToTiptapDoc(sections);
+
+      // Update artifact state so TipTap initializes with the generated content
+      setArtifact((prev) =>
+        prev ? { ...prev, content: content as unknown as Record<string, unknown> } : null
+      );
+
+      // Save to Supabase
+      handleContentSave(content as unknown as Record<string, unknown>);
+
+      // Exit generation mode
+      setIsGenerating(false);
+      window.history.replaceState({}, "", `/editor/${id}`);
+    },
+    [id, handleContentSave]
+  );
+
+  const handleGenerationError = useCallback(
+    (error: string) => {
+      console.error("[editor] Generation error:", error);
+      toast({ message: error });
+      setIsGenerating(false);
+      window.history.replaceState({}, "", `/editor/${id}`);
     },
     [id]
   );
@@ -669,20 +712,28 @@ export default function EditorPage() {
 
           {/* Editor */}
           <div className="mt-6" data-tour="editor-content">
-            <TiptapEditor
-              content={artifact.content}
-              onSave={handleContentSave}
-              onSaveStatusChange={setSaveStatus}
-              onTextChange={handleTextChange}
-              onSectionChange={handleSectionChange}
-              onReady={handleEditorReady}
-              onEditorInstance={handleEditorInstance}
-              onSectionNameChange={setCurrentSectionName}
-              insightCount={insightCount}
-              onOpenPanel={handleOpenPanel}
-              briefing={sectionBriefing}
-              onDraftSection={handleDraftSection}
-            />
+            {isGenerating ? (
+              <SpecGenerationOverlay
+                artifactId={id}
+                onComplete={handleGenerationComplete}
+                onError={handleGenerationError}
+              />
+            ) : (
+              <TiptapEditor
+                content={artifact.content}
+                onSave={handleContentSave}
+                onSaveStatusChange={setSaveStatus}
+                onTextChange={handleTextChange}
+                onSectionChange={handleSectionChange}
+                onReady={handleEditorReady}
+                onEditorInstance={handleEditorInstance}
+                onSectionNameChange={setCurrentSectionName}
+                insightCount={insightCount}
+                onOpenPanel={handleOpenPanel}
+                briefing={sectionBriefing}
+                onDraftSection={handleDraftSection}
+              />
+            )}
           </div>
 
           {/* AI hint box */}

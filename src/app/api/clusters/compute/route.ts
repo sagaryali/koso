@@ -25,10 +25,35 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ skipped: true });
     }
 
-    // Await so Vercel doesn't kill the function before completion
-    await computeClusters(workspaceId);
+    const encoder = new TextEncoder();
 
-    return NextResponse.json({ completed: true });
+    const readable = new ReadableStream({
+      async start(controller) {
+        try {
+          await computeClusters(workspaceId, (step: string) => {
+            const data = JSON.stringify({ step });
+            controller.enqueue(encoder.encode(`data: ${data}\n\n`));
+          });
+
+          controller.enqueue(encoder.encode("data: [DONE]\n\n"));
+          controller.close();
+        } catch (err) {
+          const message =
+            err instanceof Error ? err.message : "Computation error";
+          const data = JSON.stringify({ error: message });
+          controller.enqueue(encoder.encode(`data: ${data}\n\n`));
+          controller.close();
+        }
+      },
+    });
+
+    return new Response(readable, {
+      headers: {
+        "Content-Type": "text/event-stream",
+        "Cache-Control": "no-cache",
+        Connection: "keep-alive",
+      },
+    });
   } catch (err) {
     console.error("[api/clusters/compute] Error:", err);
     const message =
