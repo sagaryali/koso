@@ -2,18 +2,19 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
-import { ChevronDown, ChevronRight, ArrowRight } from "lucide-react";
+import { ChevronDown, ChevronRight } from "lucide-react";
 import { Button, Badge, Icon, Skeleton, Tooltip } from "@/components/ui";
-import { Dialog } from "@/components/ui";
 import { Input } from "@/components/ui";
-import { EvidenceFlow } from "@/components/spec-creation/evidence-flow";
+import { ClusterSpecDialog } from "@/components/spec-creation/cluster-spec-dialog";
 import { cn } from "@/lib/utils";
 import { createClient } from "@/lib/supabase/client";
 import { useWorkspace } from "@/lib/workspace-context";
 import { useCodebaseStatus } from "@/hooks/use-codebase-status";
-import type { EvidenceCluster, Evidence, Workspace, CodebaseConnection } from "@/types";
+import type { EvidenceCluster, Evidence, CriticalityLevel } from "@/types";
 
-type SortMode = "evidence_count" | "newest" | "effort_easiest" | "effort_hardest";
+type SortMode = "evidence_count" | "newest" | "most_critical" | "effort_easiest" | "effort_hardest";
+
+type CriticalityFilter = "all" | CriticalityLevel;
 
 type EffortLevel = "Quick Win" | "Medium" | "Complex";
 
@@ -30,36 +31,19 @@ const EFFORT_ORDER: Record<EffortLevel, number> = {
   Complex: 2,
 };
 
-function EvidenceFlowDialog({
-  open,
-  onClose,
-  workspace,
-  connection,
-}: {
-  open: boolean;
-  onClose: () => void;
-  workspace: Workspace;
-  connection: CodebaseConnection | null;
-}) {
-  return (
-    <Dialog open={open} onClose={onClose} className="max-w-xl">
-      <h2 className="text-lg font-bold tracking-tight">
-        New Spec from Evidence
-      </h2>
-      <p className="mt-1 mb-4 text-sm text-text-secondary">
-        Select evidence, cluster themes, then draft a spec.
-      </p>
-      <EvidenceFlow
-        workspaceId={workspace.id}
-        workspace={workspace}
-        hasCodebase={connection?.status === "ready"}
-        codebaseRepoName={connection?.repo_name}
-        onComplete={onClose}
-        onCancel={onClose}
-      />
-    </Dialog>
-  );
-}
+const CRITICALITY_BADGE_COLORS: Record<string, string> = {
+  critical: "bg-red-100 text-red-800",
+  high: "bg-orange-100 text-orange-800",
+  medium: "bg-yellow-100 text-yellow-800",
+  low: "bg-green-100 text-green-800",
+};
+
+const CRITICALITY_ORDER: Record<string, number> = {
+  critical: 0,
+  high: 1,
+  medium: 2,
+  low: 3,
+};
 
 export default function InsightsPage() {
   const { workspace } = useWorkspace();
@@ -77,7 +61,16 @@ export default function InsightsPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<Evidence[] | null>(null);
   const [searching, setSearching] = useState(false);
-  const [evidenceFlowOpen, setEvidenceFlowOpen] = useState(false);
+
+  // Criticality filter
+  const [criticalityFilter, setCriticalityFilter] = useState<CriticalityFilter>("all");
+
+  // Multi-select
+  const [selectedClusterIds, setSelectedClusterIds] = useState<Set<string>>(new Set());
+
+  // Cluster spec dialog
+  const [specDialogClusters, setSpecDialogClusters] = useState<EvidenceCluster[]>([]);
+  const [specDialogOpen, setSpecDialogOpen] = useState(false);
 
   // Effort estimation
   const [effortMap, setEffortMap] = useState<Record<string, EffortEstimate>>({});
@@ -154,13 +147,15 @@ export default function InsightsPage() {
             if (res.ok) {
               const result = await res.json();
               if (result.completed) {
-                // Refetch clusters
                 const { data: fresh } = await supabase
                   .from("evidence_clusters")
                   .select("*")
                   .eq("workspace_id", wsId)
                   .order("evidence_count", { ascending: false });
-                if (fresh) setClusters(fresh);
+                if (fresh) {
+                  setClusters(fresh);
+                  setSelectedClusterIds(new Set());
+                }
               }
             }
           })
@@ -279,6 +274,15 @@ export default function InsightsPage() {
     });
   }
 
+  function toggleClusterSelection(clusterId: string) {
+    setSelectedClusterIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(clusterId)) next.delete(clusterId);
+      else next.add(clusterId);
+      return next;
+    });
+  }
+
   // Search
   async function handleSearch() {
     if (!searchQuery.trim() || !workspace) return;
@@ -299,7 +303,6 @@ export default function InsightsPage() {
       if (res.ok) {
         const data = await res.json();
         const evidenceResults = data.results?.evidence ?? [];
-        // Fetch full evidence items
         const ids = evidenceResults.map((r: { sourceId: string }) => r.sourceId);
         if (ids.length > 0) {
           const { data: items } = await supabase
@@ -327,6 +330,12 @@ export default function InsightsPage() {
   const sortedClusters = [...clusters].sort((a, b) => {
     if (sortMode === "evidence_count") return b.evidence_count - a.evidence_count;
     if (sortMode === "newest") return new Date(b.computed_at).getTime() - new Date(a.computed_at).getTime();
+    if (sortMode === "most_critical") {
+      const oa = a.criticality_level ? CRITICALITY_ORDER[a.criticality_level] ?? 999 : 999;
+      const ob = b.criticality_level ? CRITICALITY_ORDER[b.criticality_level] ?? 999 : 999;
+      if (oa !== ob) return oa - ob;
+      return (b.criticality_score ?? 0) - (a.criticality_score ?? 0);
+    }
     if (sortMode === "effort_easiest" || sortMode === "effort_hardest") {
       const ea = effortMap[a.label]?.effortLevel;
       const eb = effortMap[b.label]?.effortLevel;
@@ -337,17 +346,31 @@ export default function InsightsPage() {
     return 0;
   });
 
-  // Filter clusters by search
-  const filteredClusters = searchQuery.trim() && !searchResults
-    ? sortedClusters.filter(
-        (c) =>
-          c.label.toLowerCase().includes(searchQuery.toLowerCase()) ||
-          c.summary.toLowerCase().includes(searchQuery.toLowerCase())
-      )
-    : sortedClusters;
+  // Filter clusters by criticality and search
+  let filteredClusters = sortedClusters;
+  if (criticalityFilter !== "all") {
+    filteredClusters = filteredClusters.filter(
+      (c) => c.criticality_level === criticalityFilter
+    );
+  }
+  if (searchQuery.trim() && !searchResults) {
+    filteredClusters = filteredClusters.filter(
+      (c) =>
+        c.label.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        c.summary.toLowerCase().includes(searchQuery.toLowerCase())
+    );
+  }
 
   function handleCreateSpecFromCluster(cluster: EvidenceCluster) {
-    setEvidenceFlowOpen(true);
+    setSpecDialogClusters([cluster]);
+    setSpecDialogOpen(true);
+  }
+
+  function handleCreateCombinedSpec() {
+    const selected = clusters.filter((c) => selectedClusterIds.has(c.id));
+    if (selected.length === 0) return;
+    setSpecDialogClusters(selected);
+    setSpecDialogOpen(true);
   }
 
   function formatType(type: string) {
@@ -355,6 +378,9 @@ export default function InsightsPage() {
       .replace(/_/g, " ")
       .replace(/\b\w/g, (c) => c.toUpperCase());
   }
+
+  // Check if any cluster has criticality data
+  const hasCriticalityData = clusters.some((c) => c.criticality_level != null);
 
   if (loading) {
     return (
@@ -430,6 +456,9 @@ export default function InsightsPage() {
             [
               { key: "evidence_count" as SortMode, label: "By count" },
               { key: "newest" as SortMode, label: "Newest" },
+              ...(hasCriticalityData
+                ? [{ key: "most_critical" as SortMode, label: "Most critical" }]
+                : []),
               ...(Object.keys(effortMap).length > 0
                 ? [
                     { key: "effort_easiest" as SortMode, label: "Low effort first" },
@@ -453,6 +482,34 @@ export default function InsightsPage() {
           ))}
         </div>
       </div>
+
+      {/* Criticality filter chips */}
+      {hasCriticalityData && (
+        <div className="mt-3 flex items-center gap-1">
+          {(
+            [
+              { key: "all" as CriticalityFilter, label: "All" },
+              { key: "critical" as CriticalityFilter, label: "Critical" },
+              { key: "high" as CriticalityFilter, label: "High" },
+              { key: "medium" as CriticalityFilter, label: "Medium" },
+              { key: "low" as CriticalityFilter, label: "Low" },
+            ] as { key: CriticalityFilter; label: string }[]
+          ).map((opt) => (
+            <button
+              key={opt.key}
+              onClick={() => setCriticalityFilter(opt.key)}
+              className={cn(
+                "cursor-pointer px-2.5 py-1 text-xs transition-none",
+                criticalityFilter === opt.key
+                  ? "bg-bg-inverse text-text-inverse"
+                  : "text-text-secondary hover:text-text-primary"
+              )}
+            >
+              {opt.label}
+            </button>
+          ))}
+        </div>
+      )}
 
       {/* Search results */}
       {searchResults && (
@@ -552,7 +609,10 @@ export default function InsightsPage() {
                           .select("*")
                           .eq("workspace_id", workspace.id)
                           .order("evidence_count", { ascending: false });
-                        if (data) setClusters(data);
+                        if (data) {
+                          setClusters(data);
+                          setSelectedClusterIds(new Set());
+                        }
                       } finally {
                         setComputing(false);
                         setComputeStep(null);
@@ -565,55 +625,85 @@ export default function InsightsPage() {
               )}
             </div>
           ) : (
-            <div className="space-y-3">
+            <div className="space-y-3 pb-20">
               {filteredClusters.map((cluster) => {
                 const isExpanded = expandedClusters.has(cluster.id);
+                const isSelected = selectedClusterIds.has(cluster.id);
                 const effort = effortMap[cluster.label];
 
                 return (
                   <div
                     key={cluster.id}
-                    className="border border-border-default"
+                    className={cn(
+                      "border",
+                      isSelected
+                        ? "border-border-strong"
+                        : "border-border-default"
+                    )}
                   >
                     <div className="p-4">
                       <div className="flex items-start justify-between gap-3">
-                        <div className="min-w-0 flex-1">
-                          <div className="flex items-center gap-2">
-                            <h3 className="text-sm font-medium text-text-primary">
-                              {cluster.label}
-                            </h3>
-                            {effort && (
-                              <Tooltip
-                                content={
-                                  effort.effortLevel === "Quick Win"
-                                    ? "Low complexity, can be shipped fast"
-                                    : effort.effortLevel === "Medium"
-                                      ? "Moderate scope, needs some planning"
-                                      : "High complexity, significant engineering work"
-                                }
-                                position="bottom"
-                              >
-                                <span className="bg-bg-tertiary px-1.5 py-0.5 text-[10px] font-medium text-text-secondary">
-                                  {effort.effortLevel === "Quick Win"
-                                    ? "Low effort"
-                                    : effort.effortLevel === "Medium"
-                                      ? "Medium effort"
-                                      : "High effort"}
-                                </span>
-                              </Tooltip>
-                            )}
-                            {effortLoading && !effort && (
-                              <span className="h-3 w-12 animate-pulse bg-bg-tertiary" />
+                        <div className="flex min-w-0 flex-1 items-start gap-3">
+                          {/* Checkbox for multi-select */}
+                          <input
+                            type="checkbox"
+                            checked={isSelected}
+                            onChange={() => toggleClusterSelection(cluster.id)}
+                            className="mt-1 shrink-0 cursor-pointer"
+                          />
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-2">
+                              <h3 className="text-sm font-medium text-text-primary">
+                                {cluster.label}
+                              </h3>
+                              {cluster.criticality_level && (
+                                <Tooltip
+                                  content={cluster.criticality_reason || `${cluster.criticality_level} criticality`}
+                                  position="bottom"
+                                >
+                                  <span
+                                    className={cn(
+                                      "px-1.5 py-0.5 text-[10px] font-medium capitalize",
+                                      CRITICALITY_BADGE_COLORS[cluster.criticality_level]
+                                    )}
+                                  >
+                                    {cluster.criticality_level}
+                                  </span>
+                                </Tooltip>
+                              )}
+                              {effort && (
+                                <Tooltip
+                                  content={
+                                    effort.effortLevel === "Quick Win"
+                                      ? "Low complexity, can be shipped fast"
+                                      : effort.effortLevel === "Medium"
+                                        ? "Moderate scope, needs some planning"
+                                        : "High complexity, significant engineering work"
+                                  }
+                                  position="bottom"
+                                >
+                                  <span className="bg-bg-tertiary px-1.5 py-0.5 text-[10px] font-medium text-text-secondary">
+                                    {effort.effortLevel === "Quick Win"
+                                      ? "Low effort"
+                                      : effort.effortLevel === "Medium"
+                                        ? "Medium effort"
+                                        : "High effort"}
+                                  </span>
+                                </Tooltip>
+                              )}
+                              {effortLoading && !effort && (
+                                <span className="h-3 w-12 animate-pulse bg-bg-tertiary" />
+                              )}
+                            </div>
+                            <p className="mt-1 text-xs text-text-secondary">
+                              {cluster.summary}
+                            </p>
+                            {effort?.reason && (
+                              <p className="mt-1 text-[11px] text-text-tertiary">
+                                {effort.reason}
+                              </p>
                             )}
                           </div>
-                          <p className="mt-1 text-xs text-text-secondary">
-                            {cluster.summary}
-                          </p>
-                          {effort?.reason && (
-                            <p className="mt-1 text-[11px] text-text-tertiary">
-                              {effort.reason}
-                            </p>
-                          )}
                         </div>
                         <div className="flex shrink-0 items-center gap-2">
                           <Badge>{cluster.evidence_count} items</Badge>
@@ -629,7 +719,7 @@ export default function InsightsPage() {
 
                       {/* Section relevance indicators */}
                       {cluster.section_relevance && (
-                        <div className="mt-3 flex flex-wrap gap-1.5">
+                        <div className="mt-3 flex flex-wrap gap-1.5 pl-7">
                           {Object.entries(cluster.section_relevance)
                             .filter(([, score]) => score > 0.5)
                             .sort(([, a], [, b]) => b - a)
@@ -648,7 +738,7 @@ export default function InsightsPage() {
                       {/* Expand/collapse */}
                       <button
                         onClick={() => toggleClusterExpansion(cluster)}
-                        className="mt-3 flex cursor-pointer items-center gap-1 text-xs text-text-tertiary hover:text-text-secondary"
+                        className="mt-3 flex cursor-pointer items-center gap-1 pl-7 text-xs text-text-tertiary hover:text-text-secondary"
                       >
                         <Icon
                           icon={isExpanded ? ChevronDown : ChevronRight}
@@ -696,12 +786,34 @@ export default function InsightsPage() {
         </div>
       )}
 
-      {workspace && (
-        <EvidenceFlowDialog
-          open={evidenceFlowOpen}
-          onClose={() => setEvidenceFlowOpen(false)}
+      {/* Floating action bar for multi-select */}
+      {selectedClusterIds.size > 0 && (
+        <div className="fixed bottom-6 left-1/2 z-50 flex -translate-x-1/2 items-center gap-3 border border-border-strong bg-bg-primary px-5 py-3 shadow-lg">
+          <span className="text-sm text-text-primary">
+            {selectedClusterIds.size} theme{selectedClusterIds.size !== 1 ? "s" : ""} selected
+          </span>
+          <Button variant="primary" size="sm" onClick={handleCreateCombinedSpec}>
+            Create combined spec
+          </Button>
+          <button
+            onClick={() => setSelectedClusterIds(new Set())}
+            className="cursor-pointer text-xs text-text-tertiary hover:text-text-primary"
+          >
+            Clear
+          </button>
+        </div>
+      )}
+
+      {/* Cluster spec dialog */}
+      {workspace && specDialogClusters.length > 0 && (
+        <ClusterSpecDialog
+          open={specDialogOpen}
+          onClose={() => {
+            setSpecDialogOpen(false);
+            setSpecDialogClusters([]);
+          }}
+          clusters={specDialogClusters}
           workspace={workspace}
-          connection={connection}
         />
       )}
     </div>

@@ -173,6 +173,26 @@ export default function OnboardingPage() {
   // Spec sections (drafted inline before redirect)
   const [specSections, setSpecSections] = useState<SpecSection[]>([]);
 
+  // Restore product name/description from sessionStorage (survives GitHub OAuth redirect)
+  const [hydrated, setHydrated] = useState(false);
+  useEffect(() => {
+    const savedName = sessionStorage.getItem("koso_onboarding_product_name");
+    const savedDesc = sessionStorage.getItem("koso_onboarding_product_desc");
+    if (savedName) setProductName(savedName);
+    if (savedDesc) setProductDescription(savedDesc);
+    setHydrated(true);
+  }, []);
+
+  // Persist to sessionStorage whenever values change (skip the initial restore)
+  useEffect(() => {
+    if (!hydrated) return;
+    sessionStorage.setItem("koso_onboarding_product_name", productName);
+  }, [productName, hydrated]);
+  useEffect(() => {
+    if (!hydrated) return;
+    sessionStorage.setItem("koso_onboarding_product_desc", productDescription);
+  }, [productDescription, hydrated]);
+
   const searchParams = useSearchParams();
   const supabase = createClient();
   const { connection: indexingConnection, refresh: refreshCodebaseStatus } = useCodebaseStatus(codebaseConnected);
@@ -362,6 +382,9 @@ export default function OnboardingPage() {
         `koso_draft_spec_context_${artifact.id}`,
         JSON.stringify(generationContext)
       );
+      // Clean up onboarding state
+      sessionStorage.removeItem("koso_onboarding_product_name");
+      sessionStorage.removeItem("koso_onboarding_product_desc");
       setActiveWorkspaceCookie(workspaceId);
       // Hard navigation to ensure the (app) layout re-fetches fresh workspace data
       window.location.href = `/editor/${artifact.id}?generating=true`;
@@ -369,6 +392,8 @@ export default function OnboardingPage() {
     }
 
     // Fallback: redirect to home if artifact creation failed
+    sessionStorage.removeItem("koso_onboarding_product_name");
+    sessionStorage.removeItem("koso_onboarding_product_desc");
     setActiveWorkspaceCookie(workspaceId);
     window.location.href = "/home";
   }
@@ -517,12 +542,16 @@ export default function OnboardingPage() {
         }).catch(() => {});
 
         // Redirect to the editor with the new spec
+        sessionStorage.removeItem("koso_onboarding_product_name");
+        sessionStorage.removeItem("koso_onboarding_product_desc");
         setActiveWorkspaceCookie(workspaceId);
         window.location.href = `/editor/${artifact.id}`;
         return;
       }
     }
 
+    sessionStorage.removeItem("koso_onboarding_product_name");
+    sessionStorage.removeItem("koso_onboarding_product_desc");
     setActiveWorkspaceCookie(workspaceId);
     window.location.href = "/home";
   }
@@ -724,7 +753,7 @@ export default function OnboardingPage() {
                       handleParseFeedback();
                     }
                   }}
-                  className="min-h-[200px]"
+                  className="min-h-[200px] max-h-[320px]"
                 />
                 <div className="mt-8 flex flex-col gap-3">
                   {!rawFeedback.trim() && (

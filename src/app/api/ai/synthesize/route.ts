@@ -59,10 +59,12 @@ export async function POST(request: NextRequest) {
         "\n\nYou also have access to the product's codebase. When relevant, mention how a theme relates to existing code in the detail — e.g., 'relates to the existing auth module which currently supports basic roles.' Keep code references brief and useful for a PM.";
     }
 
-    // Build user prompt
-    let userPrompt = "Synthesize these feedback items:\n\n";
-    feedback.forEach((item: string, i: number) => {
-      userPrompt += `${i + 1}. ${item}\n`;
+    // Build user prompt — cap items and truncate long ones to keep prompt manageable
+    const capped = feedback.slice(0, 80);
+    let userPrompt = `Synthesize these ${capped.length} feedback items:\n\n`;
+    capped.forEach((item: string, i: number) => {
+      const truncated = item.length > 500 ? item.slice(0, 500) + "…" : item;
+      userPrompt += `${i + 1}. ${truncated}\n`;
     });
 
     if (codeContext?.architectureSummary) {
@@ -81,7 +83,7 @@ export async function POST(request: NextRequest) {
 
     const response = await anthropic.messages.create({
       model: "claude-haiku-4-5-20251001",
-      max_tokens: 400,
+      max_tokens: 1024,
       system: systemPrompt,
       messages: [{ role: "user", content: userPrompt }],
     });
@@ -120,13 +122,22 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ synthesis });
   } catch (err) {
     console.error("[api/ai/synthesize] Error:", err);
+
+    const isRateLimit =
+      err instanceof Anthropic.RateLimitError ||
+      (err instanceof Error && err.message.includes("rate"));
+    const isTimeout =
+      err instanceof Anthropic.APIConnectionTimeoutError ||
+      (err instanceof Error && err.message.includes("timeout"));
+
+    const detail = isRateLimit
+      ? "Rate limited — please wait a moment and try again."
+      : isTimeout
+        ? "The request timed out — try with less feedback or try again shortly."
+        : "Unable to synthesize feedback at this time.";
+
     return NextResponse.json({
-      synthesis: [
-        {
-          theme: "Error",
-          detail: "Unable to synthesize feedback at this time.",
-        },
-      ],
+      synthesis: [{ theme: "Error", detail }],
     });
   }
 }

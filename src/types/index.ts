@@ -172,6 +172,8 @@ export interface MarketResearchResponse {
 
 // Evidence cluster types
 
+export type CriticalityLevel = 'critical' | 'high' | 'medium' | 'low';
+
 export interface EvidenceCluster {
   id: string;
   workspace_id: string;
@@ -180,6 +182,9 @@ export interface EvidenceCluster {
   evidence_ids: string[];
   evidence_count: number;
   section_relevance: Record<string, number>;
+  criticality_score: number | null;
+  criticality_level: CriticalityLevel | null;
+  criticality_reason: string | null;
   computed_at: string;
 }
 

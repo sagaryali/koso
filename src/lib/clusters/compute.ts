@@ -20,6 +20,13 @@ interface SectionRelevanceResult {
   relevance: Record<string, number>;
 }
 
+interface CriticalityResult {
+  label: string;
+  score: number;
+  level: "critical" | "high" | "medium" | "low";
+  reason: string;
+}
+
 function isDemoMode() {
   return (
     process.env.NEXT_PUBLIC_DEMO_MODE === "true" ||
@@ -82,7 +89,7 @@ export async function computeClusters(
     onProgress?.("Fetching evidence...");
     const { data: evidence, error: evidenceError } = await supabase
       .from("evidence")
-      .select("id, title, content")
+      .select("id, title, content, created_at")
       .eq("workspace_id", workspaceId)
       .order("created_at", { ascending: false })
       .limit(200);
@@ -118,6 +125,9 @@ export async function computeClusters(
             ? JSON.stringify(centroid)
             : null,
           section_relevance: {} as Record<string, number>,
+          criticality_score: null as number | null,
+          criticality_level: null as string | null,
+          criticality_reason: null as string | null,
           computed_at: new Date().toISOString(),
         };
       })
@@ -142,7 +152,29 @@ export async function computeClusters(
       }
     }
 
-    // 5. Delete old clusters, insert new ones
+    // 5. Assess criticality
+    if (validClusters.length > 0 && !isDemoMode()) {
+      onProgress?.("Assessing criticality...");
+      const critResults = await computeCriticality(
+        validClusters.map((c) => ({
+          label: c.label,
+          summary: c.summary,
+          evidenceCount: c.evidence_count,
+        })),
+        evidence
+      );
+
+      for (const cluster of validClusters) {
+        const match = critResults.find((r) => r.label === cluster.label);
+        if (match) {
+          cluster.criticality_score = match.score;
+          cluster.criticality_level = match.level;
+          cluster.criticality_reason = match.reason;
+        }
+      }
+    }
+
+    // 6. Delete old clusters, insert new ones
     onProgress?.("Saving themes...");
     await supabase
       .from("evidence_clusters")
@@ -153,7 +185,7 @@ export async function computeClusters(
       await supabase.from("evidence_clusters").insert(validClusters);
     }
 
-    // 6. Update log
+    // 7. Update log
     await updateLog(workspaceId, "completed", evidence.length);
   } catch (err) {
     console.error("[clusters] Computation failed:", err);
@@ -264,6 +296,51 @@ async function computeCentroid(
   }
 
   return centroid;
+}
+
+async function computeCriticality(
+  clusters: { label: string; summary: string; evidenceCount: number }[],
+  evidence: { id: string; created_at: string }[]
+): Promise<CriticalityResult[]> {
+  const anthropic = new Anthropic({
+    apiKey: process.env.ANTHROPIC_API_KEY,
+  });
+
+  // Compute recency: fraction of evidence from last 30 days
+  const thirtyDaysAgo = Date.now() - 30 * 24 * 60 * 60 * 1000;
+  const recentCount = evidence.filter(
+    (e) => new Date(e.created_at).getTime() > thirtyDaysAgo
+  ).length;
+  const recencyRatio =
+    evidence.length > 0 ? (recentCount / evidence.length).toFixed(2) : "0";
+
+  const clusterDescriptions = clusters
+    .map(
+      (c) =>
+        `- "${c.label}": ${c.summary} (${c.evidenceCount} evidence items)`
+    )
+    .join("\n");
+
+  const response = await anthropic.messages.create({
+    model: "claude-haiku-4-5-20251001",
+    max_tokens: 1024,
+    system: `You are a product analyst assessing business criticality of evidence themes. Score each on a 0.0-1.0 scale considering: frequency (evidence count), business impact (revenue, churn, compliance risk), breadth (how many users affected), and recency. ${recencyRatio} of evidence is from the last 30 days. Assign a level: critical (>=0.8), high (>=0.6), medium (>=0.4), low (<0.4). Provide a short reason (one sentence). Return JSON: {"results": [{"label": "...", "score": 0.85, "level": "critical", "reason": "..."}]}. No markdown, no code fences.`,
+    messages: [{ role: "user", content: clusterDescriptions }],
+  });
+
+  let raw =
+    response.content[0].type === "text"
+      ? response.content[0].text.trim()
+      : '{"results":[]}';
+
+  raw = raw.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/g, "");
+
+  try {
+    const parsed = JSON.parse(raw);
+    return (parsed.results ?? []) as CriticalityResult[];
+  } catch {
+    return [];
+  }
 }
 
 async function computeSectionRelevance(

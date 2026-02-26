@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect } from "react";
 import { StreamedMarkdown } from "@/components/ui/streamed-markdown";
 
 const SECTION_NAMES = [
@@ -26,12 +26,8 @@ export function SpecGenerationOverlay({
     { section: string; text: string }[]
   >([]);
   const [streaming, setStreaming] = useState(true);
-  const startedRef = useRef(false);
 
   useEffect(() => {
-    if (startedRef.current) return;
-    startedRef.current = true;
-
     const contextKey = `koso_draft_spec_context_${artifactId}`;
     const progressKey = `koso_draft_spec_progress_${artifactId}`;
 
