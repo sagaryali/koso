@@ -3,14 +3,14 @@
 import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { Code, Check, Circle, X, ArrowRight } from "lucide-react";
-import { Button, Input, Badge, Icon, Skeleton } from "@/components/ui";
+import { Button, Input, TextArea, Badge, Icon, Skeleton } from "@/components/ui";
 import { toast } from "@/components/ui/toast";
 import { cn } from "@/lib/utils";
 import { createClient } from "@/lib/supabase/client";
 import { useWorkspace } from "@/lib/workspace-context";
 import { useCodebaseStatus } from "@/hooks/use-codebase-status";
-import { useTourTrigger } from "@/hooks/use-tour-trigger";
-import { HOME_TOUR } from "@/lib/tours";
+import { useCoachMarks } from "@/lib/coach-mark-context";
+import { getHomeTour } from "@/lib/tours";
 import { NewSpecDialog } from "@/components/new-spec-dialog";
 import { EvidenceFlow } from "@/components/spec-creation/evidence-flow";
 import { Dialog } from "@/components/ui";
@@ -95,8 +95,8 @@ export default function HomePage() {
   const router = useRouter();
   const supabase = createClient();
   const { connection, connections } = useCodebaseStatus(true);
-
-  useTourTrigger("home", HOME_TOUR, 800);
+  const { startTour } = useCoachMarks();
+  const tourTriggered = useRef(false);
 
   const [recentArtifacts, setRecentArtifacts] = useState<Artifact[]>([]);
   const [recentEvidence, setRecentEvidence] = useState<Evidence[]>([]);
@@ -375,6 +375,14 @@ export default function HomePage() {
     prevCodebaseStatus.current = connection.status;
   }, [connection?.status, workspace?.id]);
 
+  // ── Conditional tour trigger ────────────────────────────────────
+  useEffect(() => {
+    if (loading || !workspace || tourTriggered.current) return;
+    tourTriggered.current = true;
+    const steps = getHomeTour(evidenceCount > 0);
+    setTimeout(() => startTour("home", steps, workspace.id), 800);
+  }, [loading, workspace?.id]);
+
   // ── Add evidence ───────────────────────────────────────────────
   async function handleAddEvidence() {
     if (!evidenceInput.trim() || !workspace || addingEvidence) return;
@@ -414,6 +422,9 @@ export default function HomePage() {
     setAddingEvidence(false);
 
     if (data?.id) {
+      const newCount = evidenceCount + 1;
+      setEvidenceCount(newCount);
+
       fetch("/api/embeddings/index", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -423,16 +434,38 @@ export default function HomePage() {
       );
 
       const evidenceId = data.id;
-      toast({
-        message: "Added to evidence pool",
-        action: {
-          label: "Undo",
-          onClick: async () => {
-            await supabase.from("evidence").delete().eq("id", evidenceId);
-            toast({ message: "Evidence removed" });
+
+      if (newCount >= 3 && evidenceCount < 3) {
+        toast({ message: "Themes unlocked! Analyzing your evidence..." });
+        if (workspace) {
+          fetchInsights(workspace.id, connection?.status === "ready");
+        }
+      } else if (newCount < 3) {
+        const remaining = 3 - newCount;
+        toast({
+          message: `Added to evidence pool — ${remaining} more to unlock themes`,
+          action: {
+            label: "Undo",
+            onClick: async () => {
+              await supabase.from("evidence").delete().eq("id", evidenceId);
+              setEvidenceCount((prev) => prev - 1);
+              toast({ message: "Evidence removed" });
+            },
           },
-        },
-      });
+        });
+      } else {
+        toast({
+          message: "Added to evidence pool",
+          action: {
+            label: "Undo",
+            onClick: async () => {
+              await supabase.from("evidence").delete().eq("id", evidenceId);
+              setEvidenceCount((prev) => prev - 1);
+              toast({ message: "Evidence removed" });
+            },
+          },
+        });
+      }
     }
   }
 
@@ -443,20 +476,28 @@ export default function HomePage() {
   }
 
   // ── Derived: subtitle ──────────────────────────────────────────
-  function getSubtitle() {
+  function getSubtitle(): { text: string; clickable: boolean } {
     if (connection?.status === "syncing" || connection?.status === "pending") {
-      return "Indexing your codebase \u2014 code context will appear shortly";
+      return { text: "Indexing your codebase \u2014 code context will appear shortly", clickable: false };
     }
     if (unlinkedCount > 0) {
-      return `You have ${unlinkedCount} piece${unlinkedCount !== 1 ? "s" : ""} of unlinked feedback`;
+      return { text: `You have ${unlinkedCount} piece${unlinkedCount !== 1 ? "s" : ""} of unlinked feedback`, clickable: false };
     }
     if (draftCount > 0) {
-      return `${draftCount} spec${draftCount !== 1 ? "s are" : " is"} still in draft`;
+      return { text: `${draftCount} spec${draftCount !== 1 ? "s are" : " is"} still in draft`, clickable: false };
     }
     if (evidenceCount === 0) {
-      return "Paste some customer feedback to get started";
+      return { text: "Paste some customer feedback to get started", clickable: true };
     }
-    return "All caught up";
+    return { text: "All caught up", clickable: false };
+  }
+
+  function scrollToEvidenceHero() {
+    const el = document.getElementById("evidence-hero-input");
+    if (el) {
+      el.scrollIntoView({ behavior: "smooth", block: "center" });
+      el.focus();
+    }
   }
 
   // ── Derived: unified timeline ──────────────────────────────────
@@ -551,7 +592,20 @@ export default function HomePage() {
     <div className="px-12 py-10 page-transition">
       {/* 1. Greeting + contextual subtitle */}
       <h1 className="text-2xl font-bold tracking-tight">{getGreeting()}</h1>
-      <p className="mt-1 text-sm text-text-secondary">{getSubtitle()}</p>
+      {(() => {
+        const subtitle = getSubtitle();
+        if (subtitle.clickable) {
+          return (
+            <button
+              onClick={scrollToEvidenceHero}
+              className="mt-1 cursor-pointer text-sm text-text-secondary hover:text-text-primary"
+            >
+              {subtitle.text}
+            </button>
+          );
+        }
+        return <p className="mt-1 text-sm text-text-secondary">{subtitle.text}</p>;
+      })()}
 
       {/* Getting started checklist */}
       {showChecklist && (
@@ -616,101 +670,256 @@ export default function HomePage() {
         </div>
       )}
 
-      {/* 2. Insights summary (compact) */}
-      {evidenceCount > 0 && (
-        <div className="mt-10 border border-border-default bg-bg-secondary p-5" data-tour="home-insights">
-          <div className="flex items-center justify-between">
-            <h2 className="text-sm font-medium text-text-primary">
-              Themes from your evidence
-            </h2>
-            <button
-              onClick={() => router.push("/insights")}
-              className="flex cursor-pointer items-center gap-1 text-xs text-text-secondary hover:text-text-primary"
-            >
-              View all insights
-              <Icon icon={ArrowRight} size={12} />
-            </button>
+      {/* 2. Evidence hero (when no evidence) or Insights summary */}
+      {evidenceCount === 0 ? (
+        <div
+          className="mt-10 border border-border-default bg-bg-secondary p-6"
+          data-tour="home-evidence-hero"
+        >
+          <h2 className="text-sm font-medium text-text-primary">
+            Unlock AI-powered theme analysis
+          </h2>
+          <p className="mt-1 text-xs text-text-secondary">
+            Add 3+ pieces of evidence to see patterns
+          </p>
+
+          {/* Progress indicators */}
+          <div className="mt-4 flex items-center gap-2">
+            <div className="flex gap-1.5">
+              {[0, 1, 2].map((i) => (
+                <div
+                  key={i}
+                  className="h-1.5 w-16 bg-border-default"
+                />
+              ))}
+            </div>
+            <span className="text-xs text-text-tertiary">0 of 3</span>
           </div>
 
-          {synthesisLoading ? (
-            <div className="mt-3">
-              <Skeleton variant="text" width="60%" />
-            </div>
-          ) : synthesis && synthesis.length > 0 ? (
-            <div className="mt-3 flex flex-wrap gap-2">
-              {synthesis.slice(0, 4).map((t, i) => (
-                <span
-                  key={i}
-                  className="bg-bg-tertiary px-2 py-1 text-xs text-text-secondary"
-                >
-                  {t.theme}
-                </span>
-              ))}
-              {synthesis.length > 4 && (
-                <span className="px-2 py-1 text-xs text-text-tertiary">
-                  +{synthesis.length - 4} more
-                </span>
-              )}
-            </div>
-          ) : null}
-        </div>
-      )}
+          {/* Greyed mock pills */}
+          <div className="mt-3 flex gap-2">
+            <span className="bg-bg-tertiary/50 px-2 py-1 text-xs text-text-tertiary">
+              Customer pain point
+            </span>
+            <span className="bg-bg-tertiary/50 px-2 py-1 text-xs text-text-tertiary">
+              Feature request
+            </span>
+          </div>
 
-      {/* Unlinked evidence nudge */}
-      {unlinkedCount > 3 && (
-        <div className="mt-6 border border-border-default bg-bg-secondary px-4 py-3">
-          <p className="text-sm text-text-secondary">
-            You have{" "}
-            <button
-              onClick={() => router.push("/evidence?filter=unlinked")}
-              className="cursor-pointer font-medium text-text-primary underline"
-            >
-              {unlinkedCount} unlinked evidence items
-            </button>
-            . Consider linking them to specs or starting a new spec from evidence.
-          </p>
-        </div>
-      )}
-
-      {/* 3. Quick-add evidence */}
-      <div className="mt-10" data-tour="home-quick-add">
-        <div className="mb-3 flex gap-2">
-          {EVIDENCE_TYPES.map((t) => (
-            <button
-              key={t.value}
-              onClick={() => setEvidenceType(t.value)}
-              className={cn(
-                "cursor-pointer rounded-sm px-2 py-1 text-xs font-medium transition-none",
-                evidenceType === t.value
-                  ? "bg-bg-inverse text-text-inverse"
-                  : "bg-bg-tertiary text-text-primary"
-              )}
-            >
-              {t.label}
-            </button>
-          ))}
-        </div>
-        <div className="flex gap-3">
-          <div className="flex-1">
-            <Input
-              id="evidence-quick-add"
-              placeholder="Paste feedback, a metric, or a quick note..."
+          {/* Evidence input */}
+          <div className="mt-4">
+            <TextArea
+              id="evidence-hero-input"
+              placeholder="Paste feedback, a metric, or a research note..."
               value={evidenceInput}
               onChange={(e) => setEvidenceInput(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") handleAddEvidence();
-              }}
+              className="min-h-[80px]"
             />
           </div>
-          <Button
-            variant="secondary"
-            onClick={handleAddEvidence}
-            disabled={!evidenceInput.trim() || addingEvidence}
-          >
-            {addingEvidence ? "Adding..." : "Add to Evidence"}
-          </Button>
+          <div className="mt-3 flex items-center gap-2">
+            <div className="flex gap-1.5">
+              {EVIDENCE_TYPES.map((t) => (
+                <button
+                  key={t.value}
+                  onClick={() => setEvidenceType(t.value)}
+                  className={cn(
+                    "cursor-pointer rounded-sm px-2 py-1 text-xs font-medium transition-none",
+                    evidenceType === t.value
+                      ? "bg-bg-inverse text-text-inverse"
+                      : "bg-bg-tertiary text-text-primary"
+                  )}
+                >
+                  {t.label}
+                </button>
+              ))}
+            </div>
+            <div className="ml-auto">
+              <Button
+                variant="secondary"
+                onClick={handleAddEvidence}
+                disabled={!evidenceInput.trim() || addingEvidence}
+              >
+                {addingEvidence ? "Adding..." : "Add"}
+              </Button>
+            </div>
+          </div>
         </div>
-      </div>
+      ) : (
+        <>
+          {/* Insights summary (compact) */}
+          <div className="mt-10 border border-border-default bg-bg-secondary p-5" data-tour="home-insights">
+            <div className="flex items-center justify-between">
+              <h2 className="text-sm font-medium text-text-primary">
+                Themes from your evidence
+              </h2>
+              <button
+                onClick={() => router.push("/insights")}
+                className="flex cursor-pointer items-center gap-1 text-xs text-text-secondary hover:text-text-primary"
+              >
+                View all insights
+                <Icon icon={ArrowRight} size={12} />
+              </button>
+            </div>
+
+            {synthesisLoading ? (
+              <div className="mt-3">
+                <Skeleton variant="text" width="60%" />
+              </div>
+            ) : synthesis && synthesis.length > 0 ? (
+              <div className="mt-3 flex flex-wrap gap-2">
+                {synthesis.slice(0, 4).map((t, i) => (
+                  <span
+                    key={i}
+                    className="bg-bg-tertiary px-2 py-1 text-xs text-text-secondary"
+                  >
+                    {t.theme}
+                  </span>
+                ))}
+                {synthesis.length > 4 && (
+                  <span className="px-2 py-1 text-xs text-text-tertiary">
+                    +{synthesis.length - 4} more
+                  </span>
+                )}
+              </div>
+            ) : null}
+          </div>
+
+          {/* Unlinked evidence nudge */}
+          {unlinkedCount > 3 && (
+            <div className="mt-6 border border-border-default bg-bg-secondary px-4 py-3">
+              <p className="text-sm text-text-secondary">
+                You have{" "}
+                <button
+                  onClick={() => router.push("/evidence?filter=unlinked")}
+                  className="cursor-pointer font-medium text-text-primary underline"
+                >
+                  {unlinkedCount} unlinked evidence items
+                </button>
+                . Consider linking them to specs or starting a new spec from evidence.
+              </p>
+            </div>
+          )}
+
+          {/* Quick-add evidence */}
+          <div className="mt-10" data-tour="home-quick-add">
+            <div className="mb-3 flex gap-2">
+              {EVIDENCE_TYPES.map((t) => (
+                <button
+                  key={t.value}
+                  onClick={() => setEvidenceType(t.value)}
+                  className={cn(
+                    "cursor-pointer rounded-sm px-2 py-1 text-xs font-medium transition-none",
+                    evidenceType === t.value
+                      ? "bg-bg-inverse text-text-inverse"
+                      : "bg-bg-tertiary text-text-primary"
+                  )}
+                >
+                  {t.label}
+                </button>
+              ))}
+            </div>
+            <div className="flex gap-3">
+              <div className="flex-1">
+                <Input
+                  id="evidence-quick-add"
+                  placeholder="Paste feedback, a metric, or a quick note..."
+                  value={evidenceInput}
+                  onChange={(e) => setEvidenceInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") handleAddEvidence();
+                  }}
+                />
+              </div>
+              <Button
+                variant="secondary"
+                onClick={handleAddEvidence}
+                disabled={!evidenceInput.trim() || addingEvidence}
+              >
+                {addingEvidence ? "Adding..." : "Add to Evidence"}
+              </Button>
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* Scenario-specific nudge (only when checklist dismissed) */}
+      {checklistDismissed && (() => {
+        // Scenario A: Has evidence + codebase, no spec
+        if (hasEvidence && hasCodebase && !hasSpec) {
+          return (
+            <div className="mt-6 border border-border-default bg-bg-secondary px-4 py-3">
+              <p className="text-sm text-text-secondary">
+                Evidence and codebase are ready.{" "}
+                <button
+                  onClick={handleCreateSpec}
+                  className="cursor-pointer font-medium text-text-primary underline"
+                >
+                  Write your first spec
+                </button>
+                {" "}&mdash; the AI will pull in relevant context automatically.
+              </p>
+            </div>
+          );
+        }
+        // Scenario B: Has codebase, no evidence
+        if (hasCodebase && !hasEvidence) {
+          return (
+            <div className="mt-6 border border-border-default bg-bg-secondary px-4 py-3">
+              <p className="text-sm text-text-secondary">
+                Your codebase is connected.{" "}
+                <button
+                  onClick={scrollToEvidenceHero}
+                  className="cursor-pointer font-medium text-text-primary underline"
+                >
+                  Add customer feedback
+                </button>
+                {" "}to see AI-powered insights grounded in your code.
+              </p>
+            </div>
+          );
+        }
+        // Scenario C: Has evidence, no codebase
+        if (hasEvidence && !hasCodebase) {
+          return (
+            <div className="mt-6 border border-border-default bg-bg-secondary px-4 py-3">
+              <p className="text-sm text-text-secondary">
+                <button
+                  onClick={() => router.push("/settings")}
+                  className="cursor-pointer font-medium text-text-primary underline"
+                >
+                  Connect your codebase
+                </button>
+                {" "}to unlock effort estimates, architecture detection, and technical feasibility checks.
+              </p>
+            </div>
+          );
+        }
+        // Scenario D: Nothing done
+        if (!hasEvidence && !hasCodebase && !hasSpec) {
+          return (
+            <div className="mt-6 border border-border-default bg-bg-secondary px-4 py-3">
+              <p className="mb-3 text-sm text-text-secondary">
+                Pick up where you left off
+              </p>
+              <div className="flex gap-3">
+                <Button
+                  variant="secondary"
+                  onClick={scrollToEvidenceHero}
+                >
+                  Add feedback
+                </Button>
+                <Button
+                  variant="secondary"
+                  onClick={() => router.push("/settings")}
+                >
+                  Connect codebase
+                </Button>
+              </div>
+            </div>
+          );
+        }
+        return null;
+      })()}
 
       {/* 4. Recent activity */}
       <div className="mt-16" data-tour="home-timeline">

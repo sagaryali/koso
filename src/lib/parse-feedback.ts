@@ -2,6 +2,7 @@ export interface FeedbackItem {
   id: string;
   content: string;
   title: string;
+  isSample?: boolean;
 }
 
 export function parseFeedback(raw: string): FeedbackItem[] {

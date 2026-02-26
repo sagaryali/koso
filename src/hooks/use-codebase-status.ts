@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import type { CodebaseConnection } from "@/types";
 
 interface CodebaseStatus {
@@ -38,6 +38,16 @@ export function useCodebaseStatus(pollWhileSyncing = true): CodebaseStatus {
   useEffect(() => {
     fetchStatus();
   }, [fetchStatus]);
+
+  // Re-fetch immediately when polling is enabled so we pick up newly created
+  // connections (e.g. during onboarding) instead of relying on stale data.
+  const prevPollRef = useRef(pollWhileSyncing);
+  useEffect(() => {
+    if (pollWhileSyncing && !prevPollRef.current) {
+      fetchStatus();
+    }
+    prevPollRef.current = pollWhileSyncing;
+  }, [pollWhileSyncing, fetchStatus]);
 
   // Poll while any connection is syncing
   useEffect(() => {

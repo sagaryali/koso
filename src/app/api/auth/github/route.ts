@@ -16,7 +16,9 @@ export async function GET(request: NextRequest) {
   const returnTo = request.nextUrl.searchParams.get("return_to") || "";
   const state = returnTo ? encodeURIComponent(returnTo) : "";
 
-  let url = `https://github.com/login/oauth/authorize?client_id=${clientId}&redirect_uri=${encodeURIComponent(redirectUri)}&scope=${encodeURIComponent(scope)}`;
+  // &login= forces GitHub to show the account picker even if the user has an
+  // active session, so they can choose which account to authorize.
+  let url = `https://github.com/login/oauth/authorize?client_id=${clientId}&redirect_uri=${encodeURIComponent(redirectUri)}&scope=${encodeURIComponent(scope)}&login=`;
   if (state) {
     url += `&state=${state}`;
   }

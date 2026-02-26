@@ -2,23 +2,24 @@
 
 import { useState, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Button, Input, TextArea, KosoWordmark, Skeleton } from "@/components/ui";
-import { StreamedMarkdown } from "@/components/ui/streamed-markdown";
+import { Button, Input, TextArea, KosoWordmark } from "@/components/ui";
 import { FeedbackList } from "@/components/evidence/feedback-list";
 import { RepoPicker } from "@/components/codebase/repo-picker";
 import { toast } from "@/components/ui/toast";
 import { createClient } from "@/lib/supabase/client";
 import { setActiveWorkspaceCookie } from "@/lib/workspace-cookie";
 import { parseFeedback, type FeedbackItem } from "@/lib/parse-feedback";
-import { cn } from "@/lib/utils";
-import type { GitHubRepo } from "@/types";
+import { SAMPLE_FEEDBACK_ITEMS, SAMPLE_EVIDENCE_TAG } from "@/lib/sample-feedback";
+import { useCodebaseStatus } from "@/hooks/use-codebase-status";
+import type { GitHubRepo, CodebaseConnection } from "@/types";
 
-type Step = 1 | 2 | 3 | 4 | 5;
+type Step = 1 | 2;
+type Step2Phase = "github" | "feedback";
 
 function ProgressDots({ current }: { current: Step }) {
   return (
     <div className="flex items-center justify-center gap-2">
-      {[1, 2, 3, 4, 5].map((step) => (
+      {[1, 2].map((step) => (
         <div
           key={step}
           className={`h-2 w-2 ${
@@ -30,6 +31,117 @@ function ProgressDots({ current }: { current: Step }) {
   );
 }
 
+function IndexingProgress({
+  repoName,
+  connection,
+  onContinue,
+  onRefresh,
+}: {
+  repoName: string;
+  connection: CodebaseConnection | null;
+  onContinue: () => void;
+  onRefresh: () => void;
+}) {
+  const status = connection?.status;
+  const fileCount = connection?.file_count ?? 0;
+  const moduleCount = connection?.module_count ?? 0;
+  const isIndexing = !status || status === "syncing" || status === "pending";
+  const isDone = status === "ready";
+
+  // Poll at 1.5 s while indexing so the progress bar updates smoothly.
+  // The shared hook polls at 3 s — this supplements it during onboarding.
+  useEffect(() => {
+    if (!isIndexing) return;
+    const id = setInterval(onRefresh, 1500);
+    return () => clearInterval(id);
+  }, [isIndexing, onRefresh]);
+
+  // Track whether we ever saw an in-progress state.
+  // If the first real data is already "ready" we play a brief fill animation
+  // instead of jumping straight to 100%.
+  const [everSawSyncing, setEverSawSyncing] = useState(false);
+  const [settled, setSettled] = useState(false);
+
+  useEffect(() => {
+    if (status === "syncing" || status === "pending") {
+      setEverSawSyncing(true);
+    }
+  }, [status]);
+
+  useEffect(() => {
+    if (!isDone) return;
+    if (everSawSyncing) {
+      setSettled(true);
+      return;
+    }
+    // Animate from 0 → 100 on next frame via CSS transition
+    const id = setTimeout(() => setSettled(true), 50);
+    return () => clearTimeout(id);
+  }, [isDone, everSawSyncing]);
+
+  const showDone = isDone && settled;
+  const realPct = fileCount > 0 ? Math.round((moduleCount / fileCount) * 100) : 0;
+
+  let barWidth: number;
+  if (showDone) {
+    barWidth = 100;
+  } else if (!connection || (!everSawSyncing && isDone)) {
+    barWidth = 0;
+  } else {
+    barWidth = realPct;
+  }
+
+  let label: string;
+  if (showDone) {
+    label = `Indexed ${moduleCount} modules`;
+  } else if (fileCount > 0 && everSawSyncing) {
+    label = `Indexing \u2014 ${moduleCount} of ${fileCount} files`;
+  } else {
+    label = "Starting indexing\u2026";
+  }
+
+  return (
+    <div className="mt-8">
+      <div className="border border-border-default bg-bg-secondary p-5">
+        <p className="text-center text-sm font-medium text-text-primary">
+          Connected to {repoName}
+        </p>
+
+        <div className="mt-4">
+          <div className="flex items-center justify-between text-xs text-text-secondary">
+            <span className="flex items-center gap-2">
+              {!showDone && (
+                <span className="inline-block h-2 w-2 animate-pulse bg-text-primary" />
+              )}
+              {label}
+            </span>
+            {(fileCount > 0 || showDone) && (
+              <span>{showDone ? "100" : realPct}%</span>
+            )}
+          </div>
+          <div className="mt-2 h-1.5 w-full bg-border-default">
+            <div
+              className="h-full bg-text-primary transition-all duration-700 ease-out"
+              style={{ width: `${barWidth}%` }}
+            />
+          </div>
+        </div>
+
+        <p className="mt-4 text-center text-xs text-text-tertiary">
+          {showDone
+            ? "All set \u2014 code context is ready."
+            : "This keeps running in the background. Feel free to continue."}
+        </p>
+      </div>
+      <div className="mt-6">
+        <Button className="w-full" onClick={onContinue}>
+          Continue
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 interface SpecSection {
   section: string;
   text: string;
@@ -37,48 +149,52 @@ interface SpecSection {
 
 export default function OnboardingPage() {
   const [step, setStep] = useState<Step>(1);
+  const [step2Phase, setStep2Phase] = useState<Step2Phase>("github");
   const [productName, setProductName] = useState("");
   const [productDescription, setProductDescription] = useState("");
   const [creating, setCreating] = useState(false);
 
-  // Step 2: Codebase
+  // Step 2A: Codebase
   const [codebaseConnected, setCodebaseConnected] = useState(false);
   const [githubAuthed, setGithubAuthed] = useState(false);
   const [repoPickerOpen, setRepoPickerOpen] = useState(false);
   const [connectingRepo, setConnectingRepo] = useState(false);
   const [connectedRepoName, setConnectedRepoName] = useState<string | null>(null);
 
-  // Step 3: Feedback
+  // Step 2B: Feedback
   const [rawFeedback, setRawFeedback] = useState("");
   const [feedbackItems, setFeedbackItems] = useState<FeedbackItem[]>([]);
   const [feedbackParsed, setFeedbackParsed] = useState(false);
+  const [usingSampleData, setUsingSampleData] = useState(false);
   const [synthesis, setSynthesis] = useState<
     { theme: string; detail: string }[] | null
   >(null);
   const [showSynthesis, setShowSynthesis] = useState(false);
   const [synthesizing, setSynthesizing] = useState(false);
 
-  // Step 4: First Spec
+  // Spec sections (drafted inline before redirect)
   const [specSections, setSpecSections] = useState<SpecSection[]>([]);
-  const [specStreaming, setSpecStreaming] = useState(false);
-  const [currentStreamingSection, setCurrentStreamingSection] = useState<string | null>(null);
-  const [specCreated, setSpecCreated] = useState(false);
-
-  // Summary stats
-  const [moduleCount, setModuleCount] = useState(0);
 
   const router = useRouter();
   const searchParams = useSearchParams();
   const supabase = createClient();
+  const { connection: indexingConnection, refresh: refreshCodebaseStatus } = useCodebaseStatus(codebaseConnected);
 
   // Resume at step 2 with repo picker if returning from GitHub OAuth
   useEffect(() => {
     if (searchParams.get("github") === "connected") {
       setGithubAuthed(true);
       setStep(2);
+      setStep2Phase("github");
       setRepoPickerOpen(true);
     }
   }, [searchParams]);
+
+  function handleLoadSampleData() {
+    setFeedbackItems(SAMPLE_FEEDBACK_ITEMS);
+    setFeedbackParsed(true);
+    setUsingSampleData(true);
+  }
 
   function handleParseFeedback() {
     const items = parseFeedback(rawFeedback);
@@ -116,7 +232,7 @@ export default function OnboardingPage() {
 
   async function handleSynthesizeFeedback() {
     if (feedbackItems.length === 0) {
-      setStep(5);
+      handleFinish();
       return;
     }
 
@@ -142,13 +258,9 @@ export default function OnboardingPage() {
     }
   }
 
-  async function handleTurnIntoSpec() {
+  async function handleDraftSpecAndFinish() {
     if (!synthesis || synthesis.length === 0) return;
-
-    setStep(4);
-    setSpecSections([]);
-    setSpecStreaming(true);
-    setCurrentStreamingSection(null);
+    setCreating(true);
 
     const themes = synthesis.map((t) => ({
       label: t.theme,
@@ -156,6 +268,8 @@ export default function OnboardingPage() {
       feedback: feedbackItems.map((f) => f.content),
     }));
 
+    // Draft the spec sections
+    const sections: SpecSection[] = [];
     try {
       const res = await fetch("/api/ai/draft-structured-spec", {
         method: "POST",
@@ -169,51 +283,42 @@ export default function OnboardingPage() {
         }),
       });
 
-      if (!res.ok) throw new Error("Draft failed");
+      if (res.ok && res.body) {
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder();
 
-      const reader = res.body?.getReader();
-      if (!reader) throw new Error("No response body");
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
 
-      const decoder = new TextDecoder();
-      const sections: SpecSection[] = [];
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-
-        const chunk = decoder.decode(value, { stream: true });
-        const lines = chunk.split("\n");
-
-        for (const line of lines) {
-          if (line.startsWith("data: ")) {
-            const data = line.slice(6);
-            if (data === "[DONE]") continue;
-            try {
-              const parsed = JSON.parse(data);
-              if (parsed.section && parsed.text) {
-                sections.push({ section: parsed.section, text: parsed.text });
-                setSpecSections([...sections]);
-                setCurrentStreamingSection(parsed.section);
+          const chunk = decoder.decode(value, { stream: true });
+          for (const line of chunk.split("\n")) {
+            if (line.startsWith("data: ")) {
+              const data = line.slice(6);
+              if (data === "[DONE]") continue;
+              try {
+                const parsed = JSON.parse(data);
+                if (parsed.section && parsed.text) {
+                  sections.push({ section: parsed.section, text: parsed.text });
+                }
+              } catch {
+                // skip malformed chunks
               }
-              if (parsed.error) throw new Error(parsed.error);
-            } catch (e) {
-              if (e instanceof SyntaxError) continue;
-              throw e;
             }
           }
         }
       }
     } catch (err) {
       console.error("[onboarding] Spec draft error:", err);
-    } finally {
-      setSpecStreaming(false);
-      setCurrentStreamingSection(null);
     }
+
+    // Persist everything (workspace, evidence, spec) and redirect to editor
+    await handleFinish(sections);
   }
 
   function handleSaveEvidenceAndContinue() {
     setShowSynthesis(false);
-    setStep(5);
+    handleFinish();
   }
 
   function handleConnectGitHub() {
@@ -247,16 +352,16 @@ export default function OnboardingPage() {
       setConnectingRepo(false);
       setConnectedRepoName(repo.full_name);
 
-      // Show success state briefly, then advance
-      setTimeout(() => setStep(3), 2000);
+      // codebaseConnected flipping to true will trigger a refetch in the hook
     } catch {
       toast({ message: "Failed to connect repository. Try again." });
       setConnectingRepo(false);
     }
   }
 
-  async function handleFinish() {
+  async function handleFinish(draftSections?: SpecSection[]) {
     setCreating(true);
+    const sections = draftSections ?? specSections;
 
     const {
       data: { user },
@@ -301,6 +406,7 @@ export default function OnboardingPage() {
     if (feedbackItems.length > 0) {
       for (const item of feedbackItems) {
         const evidenceTitle = item.title || item.content.slice(0, 60);
+        const tags = usingSampleData ? [SAMPLE_EVIDENCE_TAG] : [];
         const { data: evidenceData } = await supabase
           .from("evidence")
           .insert({
@@ -309,7 +415,7 @@ export default function OnboardingPage() {
             title: evidenceTitle,
             content: item.content,
             source: null,
-            tags: [],
+            tags,
           })
           .select("id")
           .single();
@@ -328,9 +434,9 @@ export default function OnboardingPage() {
     }
 
     // Create spec artifact from structured sections (if drafted)
-    if (specSections.length > 0) {
+    if (sections.length > 0) {
       const nodes: { type: string; attrs?: Record<string, unknown>; content?: { type: string; text: string }[] }[] = [];
-      for (const section of specSections) {
+      for (const section of sections) {
         nodes.push({
           type: "heading",
           attrs: { level: 2 },
@@ -374,7 +480,12 @@ export default function OnboardingPage() {
             sourceType: "artifact",
           }),
         }).catch(() => {});
-        setSpecCreated(true);
+
+        // Redirect to the editor with the new spec
+        setActiveWorkspaceCookie(workspaceId);
+        router.push(`/editor/${artifact.id}`);
+        router.refresh();
+        return;
       }
     }
 
@@ -423,8 +534,8 @@ export default function OnboardingPage() {
           </div>
         )}
 
-        {/* Step 2: Connect codebase */}
-        {step === 2 && (
+        {/* Step 2: Connect & import */}
+        {step === 2 && step2Phase === "github" && (
           <div className="mt-10">
             <h1 className="text-center text-2xl font-bold tracking-tight">
               Connect your codebase
@@ -439,17 +550,12 @@ export default function OnboardingPage() {
             </p>
 
             {connectedRepoName ? (
-              <div className="mt-8">
-                <div className="border border-border-default bg-bg-secondary p-5 text-center">
-                  <p className="text-sm font-medium text-text-primary">
-                    Connected to {connectedRepoName}
-                  </p>
-                  <div className="mt-2 flex items-center justify-center gap-2 text-xs text-text-secondary">
-                    <span className="inline-block h-2 w-2 animate-pulse bg-text-primary" />
-                    Indexing started — code context will appear as you write specs
-                  </div>
-                </div>
-              </div>
+              <IndexingProgress
+                repoName={connectedRepoName}
+                connection={indexingConnection}
+                onContinue={() => setStep2Phase("feedback")}
+                onRefresh={refreshCodebaseStatus}
+              />
             ) : connectingRepo ? (
               <div className="mt-8 flex items-center justify-center gap-2 text-sm text-text-secondary">
                 <span className="inline-block h-2 w-2 animate-pulse bg-text-primary" />
@@ -465,7 +571,7 @@ export default function OnboardingPage() {
                 </Button>
                 <Button
                   variant="ghost"
-                  onClick={() => setStep(3)}
+                  onClick={() => setStep2Phase("feedback")}
                 >
                   Skip for now
                 </Button>
@@ -477,7 +583,7 @@ export default function OnboardingPage() {
                 </Button>
                 <Button
                   variant="ghost"
-                  onClick={() => setStep(3)}
+                  onClick={() => setStep2Phase("feedback")}
                 >
                   Skip for now
                 </Button>
@@ -486,8 +592,7 @@ export default function OnboardingPage() {
           </div>
         )}
 
-        {/* Step 3: Customer feedback */}
-        {step === 3 && (
+        {step === 2 && step2Phase === "feedback" && (
           <div className="mt-10">
             <h1 className="text-center text-2xl font-bold tracking-tight">
               Got customer feedback?
@@ -502,7 +607,7 @@ export default function OnboardingPage() {
               <div className="mt-8">
                 <div className="border border-border-default bg-bg-secondary p-6">
                   <p className="text-sm font-medium">What we&apos;re hearing</p>
-                  <div className="mt-3 space-y-3">
+                  <div className="mt-3 max-h-[280px] space-y-3 overflow-y-auto">
                     {synthesis.map((t, i) => (
                       <div
                         key={i}
@@ -518,19 +623,25 @@ export default function OnboardingPage() {
                     ))}
                   </div>
                 </div>
-                <div className="mt-6 flex gap-3">
+                <p className="mt-4 text-center text-xs text-text-tertiary">
+                  The AI can draft a product spec from these themes, or you can save
+                  the evidence and write one later.
+                </p>
+                <div className="mt-3 flex gap-3">
                   <Button
                     className="flex-1"
-                    onClick={handleTurnIntoSpec}
+                    onClick={handleDraftSpecAndFinish}
+                    disabled={creating}
                   >
-                    Turn this into a spec
+                    {creating ? "Drafting spec..." : "Draft a spec from this"}
                   </Button>
                   <Button
                     variant="ghost"
                     className="flex-1"
                     onClick={handleSaveEvidenceAndContinue}
+                    disabled={creating}
                   >
-                    Save evidence & continue
+                    Save &amp; go to dashboard
                   </Button>
                 </div>
               </div>
@@ -548,9 +659,14 @@ export default function OnboardingPage() {
                   <Button
                     variant="ghost"
                     className="flex-1"
-                    onClick={() => setStep(5)}
+                    onClick={() => {
+                      setFeedbackParsed(false);
+                      setFeedbackItems([]);
+                      setRawFeedback("");
+                      setUsingSampleData(false);
+                    }}
                   >
-                    Skip
+                    Back
                   </Button>
                   <Button
                     className="flex-1"
@@ -577,122 +693,38 @@ export default function OnboardingPage() {
                   }}
                   className="min-h-[200px]"
                 />
-                <div className="mt-8 flex gap-3">
-                  <Button
-                    variant="ghost"
-                    className="flex-1"
-                    onClick={() => setStep(5)}
-                  >
-                    Skip
-                  </Button>
-                  <Button
-                    className="flex-1"
-                    onClick={handleParseFeedback}
-                    disabled={!rawFeedback.trim()}
-                  >
-                    Process
-                  </Button>
+                <div className="mt-8 flex flex-col gap-3">
+                  {!rawFeedback.trim() && (
+                    <Button
+                      variant="secondary"
+                      className="w-full"
+                      onClick={handleLoadSampleData}
+                    >
+                      Try with example feedback
+                    </Button>
+                  )}
+                  <div className="flex gap-3">
+                    <Button
+                      variant="ghost"
+                      className="flex-1"
+                      onClick={() => handleFinish()}
+                    >
+                      Skip
+                    </Button>
+                    <Button
+                      className="flex-1"
+                      onClick={handleParseFeedback}
+                      disabled={!rawFeedback.trim()}
+                    >
+                      Process
+                    </Button>
+                  </div>
                 </div>
               </div>
             )}
           </div>
         )}
 
-        {/* Step 4: First Spec (structured draft) */}
-        {step === 4 && (
-          <div className="mt-10">
-            <h1 className="text-center text-2xl font-bold tracking-tight">
-              Your first spec
-            </h1>
-            <p className="mt-2 text-center text-sm text-text-secondary">
-              We&apos;re drafting a spec from your evidence, section by section.
-            </p>
-
-            <div className="mt-6 max-h-[400px] space-y-4 overflow-y-auto border border-border-default bg-bg-secondary p-4">
-              {specSections.map((section) => {
-                const isStreaming =
-                  specStreaming && currentStreamingSection === section.section;
-                return (
-                  <div
-                    key={section.section}
-                    className="border-b border-border-default pb-3 last:border-0"
-                  >
-                    <h3 className="text-xs font-semibold text-text-primary">
-                      {section.section}
-                    </h3>
-                    <div className="mt-1 text-xs text-text-secondary">
-                      <StreamedMarkdown text={section.text} />
-                      {isStreaming && (
-                        <span className="inline-block h-3 w-0.5 animate-pulse bg-text-primary" />
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
-              {specStreaming && (
-                <div className="flex items-center gap-2 py-2 text-xs text-text-tertiary">
-                  <span className="inline-block h-3 w-3 animate-pulse rounded-full bg-text-tertiary" />
-                  {currentStreamingSection
-                    ? `Writing ${currentStreamingSection}...`
-                    : "Preparing draft..."}
-                </div>
-              )}
-            </div>
-
-            <div className="mt-6 flex gap-3">
-              {!specStreaming && specSections.length > 0 ? (
-                <>
-                  <Button className="flex-1" onClick={() => setStep(5)}>
-                    Create spec & finish
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    className="flex-1"
-                    onClick={() => {
-                      setSpecSections([]);
-                      setStep(5);
-                    }}
-                  >
-                    Skip
-                  </Button>
-                </>
-              ) : specStreaming ? null : (
-                <Button
-                  variant="ghost"
-                  className="w-full"
-                  onClick={() => setStep(5)}
-                >
-                  Skip
-                </Button>
-              )}
-            </div>
-          </div>
-        )}
-
-        {/* Step 5: Done */}
-        {step === 5 && (
-          <div className="mt-10">
-            <h1 className="text-center text-2xl font-bold tracking-tight">
-              You&apos;re all set
-            </h1>
-            <p className="mt-2 text-center text-sm text-text-secondary">
-              {productName.trim() || "Your product"} is set up
-              {feedbackItems.length > 0 &&
-                ` with ${feedbackItems.length} evidence item${feedbackItems.length !== 1 ? "s" : ""}`}
-              {codebaseConnected && ` and a connected codebase`}
-              {specSections.length > 0 && ` and a draft spec`}.
-            </p>
-            <div className="mt-8">
-              <Button
-                className="w-full"
-                onClick={handleFinish}
-                disabled={creating}
-              >
-                {creating ? "Setting up..." : "Go to dashboard"}
-              </Button>
-            </div>
-          </div>
-        )}
       </div>
 
       <RepoPicker
