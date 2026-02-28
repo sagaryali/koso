@@ -372,7 +372,6 @@ export default function OnboardingPage() {
         type: "prd",
         title: `${productName.trim() || "Product"} Spec`,
         content: placeholderSpecDoc(),
-        status: "draft",
       })
       .select("id")
       .single();
@@ -526,7 +525,6 @@ export default function OnboardingPage() {
           type: "prd",
           title: `${productName.trim() || "Product"} Spec`,
           content,
-          status: "draft",
         })
         .select("id")
         .single();

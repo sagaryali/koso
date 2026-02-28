@@ -173,7 +173,7 @@ interface FetchedContext {
   };
   workspaceOverview?: {
     clusters: { label: string; summary: string; count: number }[];
-    allSpecs: { title: string; type: string; status: string }[];
+    allSpecs: { title: string; type: string }[];
     totalEvidenceCount: number;
   };
 }

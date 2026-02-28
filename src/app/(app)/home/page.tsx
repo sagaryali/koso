@@ -38,10 +38,21 @@ function formatTimestamp(dateStr: string) {
   return date.toLocaleDateString();
 }
 
+const TYPE_LABELS: Record<string, string> = {
+  prd: "PRD",
+  user_story: "User Story",
+  principle: "Principle",
+  decision_log: "Decision Log",
+  roadmap_item: "Roadmap",
+  architecture_summary: "Architecture",
+  feedback: "Feedback",
+  metric: "Metric",
+  research: "Research",
+  meeting_note: "Meeting Note",
+};
+
 function formatType(type: string) {
-  return type
-    .replace(/_/g, " ")
-    .replace(/\b\w/g, (c) => c.toUpperCase());
+  return TYPE_LABELS[type] || type.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
 function extractTextFromTiptap(content: Record<string, unknown>): string {
@@ -87,7 +98,6 @@ type TimelineItem = {
   type: string;
   title: string;
   date: string;
-  kind: "artifact" | "evidence";
 };
 
 export default function HomePage() {
@@ -99,9 +109,7 @@ export default function HomePage() {
   const tourTriggered = useRef(false);
 
   const [recentArtifacts, setRecentArtifacts] = useState<Artifact[]>([]);
-  const [recentEvidence, setRecentEvidence] = useState<Evidence[]>([]);
   const [evidenceCount, setEvidenceCount] = useState(0);
-  const [draftCount, setDraftCount] = useState(0);
   const [loading, setLoading] = useState(true);
 
   const [evidenceInput, setEvidenceInput] = useState("");
@@ -148,37 +156,23 @@ export default function HomePage() {
     async function load() {
       const [
         { data: artifacts },
-        { data: evidence },
         { count: evCount },
-        { count: drafts },
       ] = await Promise.all([
         supabase
           .from("artifacts")
           .select("*")
           .eq("workspace_id", wsId)
+          .neq("type", "architecture_summary")
           .order("updated_at", { ascending: false })
-          .limit(10),
-        supabase
-          .from("evidence")
-          .select("*")
-          .eq("workspace_id", wsId)
-          .order("created_at", { ascending: false })
-          .limit(10),
+          .limit(15),
         supabase
           .from("evidence")
           .select("id", { count: "exact" })
           .eq("workspace_id", wsId),
-        supabase
-          .from("artifacts")
-          .select("id", { count: "exact" })
-          .eq("workspace_id", wsId)
-          .eq("status", "draft"),
       ]);
 
       if (artifacts) setRecentArtifacts(artifacts);
-      if (evidence) setRecentEvidence(evidence);
       setEvidenceCount(evCount ?? 0);
-      setDraftCount(drafts ?? 0);
 
       setLoading(false);
     }
@@ -461,9 +455,6 @@ export default function HomePage() {
     if (connection?.status === "syncing" || connection?.status === "pending") {
       return { text: "Indexing your codebase \u2014 code context will appear shortly", clickable: false };
     }
-    if (draftCount > 0) {
-      return { text: `${draftCount} spec${draftCount !== 1 ? "s are" : " is"} still in draft`, clickable: false };
-    }
     if (evidenceCount === 0) {
       return { text: "Paste some customer feedback to get started", clickable: true };
     }
@@ -480,32 +471,12 @@ export default function HomePage() {
 
   // ── Derived: unified timeline ──────────────────────────────────
   function getTimeline(): TimelineItem[] {
-    const items: TimelineItem[] = [];
-
-    for (const a of recentArtifacts) {
-      items.push({
-        id: a.id,
-        type: a.type,
-        title: a.title,
-        date: a.updated_at,
-        kind: "artifact",
-      });
-    }
-
-    for (const e of recentEvidence) {
-      items.push({
-        id: e.id,
-        type: e.type,
-        title: e.title,
-        date: e.created_at,
-        kind: "evidence",
-      });
-    }
-
-    items.sort(
-      (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
-    );
-    return items.slice(0, 15);
+    return recentArtifacts.map((a) => ({
+      id: a.id,
+      type: a.type,
+      title: a.title,
+      date: a.updated_at,
+    }));
   }
 
   // ── Loading skeleton ───────────────────────────────────────────
@@ -883,15 +854,15 @@ export default function HomePage() {
         return null;
       })()}
 
-      {/* 4. Recent activity */}
+      {/* 4. Recent specs */}
       <div className="mt-16" data-tour="home-timeline">
         <div className="text-[11px] font-medium uppercase tracking-caps text-text-tertiary">
-          Recent Activity
+          Recent Specs
         </div>
 
         {timeline.length === 0 && !codebaseJustReady ? (
           <div className="mt-4 flex flex-col items-center border border-border-default py-12">
-            <p className="text-sm text-text-tertiary">No recent activity yet</p>
+            <p className="text-sm text-text-tertiary">No specs yet</p>
           </div>
         ) : (
           <div className="mt-3 border border-border-default">
@@ -908,11 +879,7 @@ export default function HomePage() {
             {timeline.map((item, i) => (
               <button
                 key={item.id}
-                onClick={() =>
-                  item.kind === "artifact"
-                    ? router.push(`/editor/${item.id}`)
-                    : router.push("/evidence")
-                }
+                onClick={() => router.push(`/editor/${item.id}`)}
                 className={cn(
                   "flex w-full items-center gap-3 px-4 py-3 text-left transition-none hover:bg-bg-hover cursor-pointer",
                   (i > 0 || codebaseJustReady) &&

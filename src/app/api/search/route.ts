@@ -37,7 +37,7 @@ export async function POST(request: NextRequest) {
         artifactIds.length > 0
           ? supabase
               .from("artifacts")
-              .select("id, title, type, status")
+              .select("id, title, type")
               .in("id", artifactIds)
               .then((r) => r.data)
           : Promise.resolve(null),
@@ -69,7 +69,6 @@ export async function POST(request: NextRequest) {
               ...r.metadata,
               title: meta.title,
               type: meta.type,
-              status: meta.status,
             };
           }
         }

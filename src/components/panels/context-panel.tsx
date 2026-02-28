@@ -332,7 +332,6 @@ function SeededSpecCard({ spec }: { spec: SeededSpec }) {
       </span>
       <div className="mt-1.5 flex items-center gap-1.5">
         <Badge>{SEEDED_TYPE_LABELS[spec.type] || spec.type}</Badge>
-        <Badge>{spec.status}</Badge>
       </div>
     </div>
   );

@@ -7,7 +7,6 @@ import {
   PanelRightClose,
   PanelRightOpen,
   Sparkles,
-  ChevronDown,
   Trash2,
   Layers,
 } from "lucide-react";
@@ -21,7 +20,6 @@ import {
   Skeleton,
 } from "@/components/ui";
 import type { CommandPaletteContext } from "@/components/ui";
-import { DropdownMenu } from "@/components/ui";
 import { toast } from "@/components/ui/toast";
 import { TiptapEditor } from "@/components/editor/tiptap-editor";
 import { SpecGenerationOverlay } from "@/components/editor/spec-generation-overlay";
@@ -44,13 +42,7 @@ import { getSectionConfig, type SectionConfig } from "@/lib/section-config";
 import { extractPriorSections } from "@/lib/editor-utils";
 import { getActionsForSection } from "@/lib/ai/actions";
 import { useSectionBriefing } from "@/hooks/use-section-briefing";
-import type { Artifact, ArtifactStatus, Workspace } from "@/types";
-
-const STATUS_OPTIONS: { label: string; value: ArtifactStatus }[] = [
-  { label: "Draft", value: "draft" },
-  { label: "Active", value: "active" },
-  { label: "Archived", value: "archived" },
-];
+import type { Artifact, Workspace } from "@/types";
 
 const TYPE_LABELS: Record<string, string> = {
   prd: "PRD",
@@ -379,19 +371,6 @@ export default function EditorPage() {
     setArtifact((prev) => (prev ? { ...prev, title } : null));
   }, [artifact, title, id]);
 
-  // Save status
-  const handleStatusChange = useCallback(
-    async (status: ArtifactStatus) => {
-      await supabase
-        .from("artifacts")
-        .update({ status, updated_at: new Date().toISOString() })
-        .eq("id", id);
-
-      setArtifact((prev) => (prev ? { ...prev, status } : null));
-    },
-    [id]
-  );
-
   // Delete artifact
   const handleDelete = useCallback(async () => {
     await supabase.from("artifacts").delete().eq("id", id);
@@ -462,7 +441,6 @@ export default function EditorPage() {
               };
             }),
           },
-          status: "draft",
           parent_id: artifact.id,
         });
       }
@@ -600,22 +578,6 @@ export default function EditorPage() {
           {/* Row 1: Type badge + Status dropdown */}
           <div className="flex items-center gap-2">
             <Badge>{TYPE_LABELS[artifact.type] || artifact.type}</Badge>
-            <DropdownMenu
-              trigger={
-                <Badge className="cursor-pointer">
-                  {artifact.status}
-                  <Icon
-                    icon={ChevronDown}
-                    size={12}
-                    className="ml-1 text-text-tertiary"
-                  />
-                </Badge>
-              }
-              items={STATUS_OPTIONS.map((opt) => ({
-                label: opt.label,
-                onClick: () => handleStatusChange(opt.value),
-              }))}
-            />
 
             {/* Save status */}
             <span

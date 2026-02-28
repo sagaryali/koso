@@ -6,8 +6,6 @@ export type ArtifactType =
   | "roadmap_item"
   | "architecture_summary";
 
-export type ArtifactStatus = "draft" | "active" | "archived";
-
 export type EvidenceType = "feedback" | "metric" | "research" | "meeting_note";
 
 export type CodebaseConnectionStatus =
@@ -43,7 +41,6 @@ export interface Artifact {
   type: ArtifactType;
   title: string;
   content: Record<string, unknown>;
-  status: ArtifactStatus;
   parent_id: string | null;
   source_cluster_ids: string[];
   created_at: string;

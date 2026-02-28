@@ -503,7 +503,6 @@ export function EvidenceFlow({
         type: "prd",
         title,
         content,
-        status: "draft",
         source_cluster_ids: clusterUUIDs,
       })
       .select("id")

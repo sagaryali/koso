@@ -51,7 +51,6 @@ export function AppShell({ workspace, allWorkspaces, children }: AppShellProps) 
         type: "prd",
         title: "Untitled Spec",
         content: {},
-        status: "draft",
       })
       .select()
       .single();

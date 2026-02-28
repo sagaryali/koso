@@ -29,7 +29,7 @@ interface MarketResult {
 
 interface WorkspaceOverviewContext {
   clusters: { label: string; summary: string; count: number }[];
-  allSpecs: { title: string; type: string; status: string }[];
+  allSpecs: { title: string; type: string }[];
   totalEvidenceCount: number;
 }
 
@@ -254,7 +254,7 @@ export function buildPrompt(
     if (wo.allSpecs.length > 0) {
       userParts.push("All Specifications:");
       for (const s of wo.allSpecs) {
-        userParts.push(`- ${s.title} [${s.type}] — ${s.status}`);
+        userParts.push(`- ${s.title} [${s.type}]`);
       }
       userParts.push("");
     }

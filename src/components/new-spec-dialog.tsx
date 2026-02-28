@@ -61,7 +61,6 @@ export function NewSpecDialog({
         type: template.type,
         title: template.id === "blank" ? "Untitled Spec" : `Untitled ${template.label}`,
         content: template.content,
-        status: "draft",
       })
       .select()
       .single();
@@ -86,7 +85,6 @@ export function NewSpecDialog({
         type: template.type as ArtifactType,
         title: `Untitled ${template.label}`,
         content: template.content,
-        status: "draft",
       })
       .select()
       .single();

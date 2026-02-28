@@ -341,7 +341,6 @@ async function generateArchitectureSummary(
         type: "architecture_summary",
         title: "Codebase Architecture",
         content: { type: "doc", content: [{ type: "paragraph", content: [{ type: "text", text: architectureContent }] }] },
-        status: "active",
       });
     }
 

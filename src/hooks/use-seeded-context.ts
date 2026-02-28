@@ -5,7 +5,6 @@ import { createClient } from "@/lib/supabase/client";
 import type {
   Evidence,
   ArtifactType,
-  ArtifactStatus,
   CodebaseModuleType,
 } from "@/types";
 
@@ -13,7 +12,6 @@ export interface SeededSpec {
   id: string;
   title: string;
   type: ArtifactType;
-  status: ArtifactStatus;
   updated_at: string;
 }
 
@@ -67,7 +65,7 @@ export function useSeededContext(
 
       const specsQuery = supabase
         .from("artifacts")
-        .select("id, title, type, status, updated_at")
+        .select("id, title, type, updated_at")
         .eq("workspace_id", workspaceId)
         .neq("id", currentArtifactId)
         .neq("type", "architecture_summary")

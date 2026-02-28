@@ -2,7 +2,7 @@ import { createClient } from "@/lib/supabase/client";
 
 export interface WorkspaceOverview {
   clusters: { label: string; summary: string; count: number }[];
-  allSpecs: { title: string; type: string; status: string }[];
+  allSpecs: { title: string; type: string }[];
   totalEvidenceCount: number;
 }
 
@@ -19,7 +19,7 @@ export async function fetchWorkspaceOverview(
         .order("evidence_count", { ascending: false }),
       supabase
         .from("artifacts")
-        .select("id, title, type, status")
+        .select("id, title, type")
         .eq("workspace_id", workspaceId)
         .neq("type", "architecture_summary")
         .order("updated_at", { ascending: false }),
@@ -43,10 +43,9 @@ export async function fetchWorkspaceOverview(
   const allSpecs =
     artifactsResult.status === "fulfilled" && artifactsResult.value.data
       ? artifactsResult.value.data.map(
-          (a: { title: string; type: string; status: string }) => ({
+          (a: { title: string; type: string }) => ({
             title: a.title,
             type: a.type,
-            status: a.status || "draft",
           })
         )
       : [];

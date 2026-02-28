@@ -128,7 +128,6 @@ async function main() {
         type: artifact.type,
         title: artifact.title,
         content: artifact.content,
-        status: artifact.status,
       })
       .select("id")
       .single();

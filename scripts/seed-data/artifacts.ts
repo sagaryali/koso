@@ -39,7 +39,6 @@ export type SeedArtifact = {
   type: string;
   title: string;
   content: Record<string, unknown>;
-  status: string;
   parentKey?: string;
 };
 
@@ -48,7 +47,6 @@ export const ARTIFACTS: SeedArtifact[] = [
     key: "prd-realtime",
     type: "prd",
     title: "Real-time Collaboration",
-    status: "active",
     content: doc(
       heading(1, "Real-time Collaboration"),
       heading(2, "Problem Statement"),
@@ -95,7 +93,6 @@ export const ARTIFACTS: SeedArtifact[] = [
     key: "prd-mobile",
     type: "prd",
     title: "Mobile App (iOS & Android)",
-    status: "draft",
     content: doc(
       heading(1, "Mobile App"),
       heading(2, "Problem Statement"),
@@ -121,7 +118,6 @@ export const ARTIFACTS: SeedArtifact[] = [
     key: "story-sprint-board",
     type: "user_story",
     title: "Create and manage sprint boards",
-    status: "active",
     parentKey: "prd-realtime",
     content: doc(
       heading(1, "Create and manage sprint boards"),
@@ -149,7 +145,6 @@ export const ARTIFACTS: SeedArtifact[] = [
     key: "story-code-review",
     type: "user_story",
     title: "Inline code review on tasks",
-    status: "draft",
     parentKey: "prd-realtime",
     content: doc(
       heading(1, "Inline code review on tasks"),
@@ -169,7 +164,6 @@ export const ARTIFACTS: SeedArtifact[] = [
     key: "principle-async",
     type: "principle",
     title: "Async-First Communication",
-    status: "active",
     content: doc(
       heading(1, "Async-First Communication"),
       heading(2, "Principle"),
@@ -194,7 +188,6 @@ export const ARTIFACTS: SeedArtifact[] = [
     key: "decision-database",
     type: "decision_log",
     title: "Database Selection: PostgreSQL vs MongoDB",
-    status: "active",
     content: doc(
       heading(1, "Database Selection: PostgreSQL vs MongoDB"),
       heading(2, "Context"),
@@ -234,7 +227,6 @@ export const ARTIFACTS: SeedArtifact[] = [
     key: "roadmap-q1",
     type: "roadmap_item",
     title: "Q1 2026 Roadmap",
-    status: "active",
     content: doc(
       heading(1, "Q1 2026 Roadmap"),
       heading(2, "Theme: Foundation for Collaboration"),
@@ -271,7 +263,6 @@ export const ARTIFACTS: SeedArtifact[] = [
     key: "arch-summary",
     type: "architecture_summary",
     title: "TaskFlow Architecture Overview",
-    status: "active",
     content: doc(
       heading(1, "TaskFlow Architecture Overview"),
       heading(2, "Frontend"),
@@ -308,7 +299,6 @@ export const ARTIFACTS: SeedArtifact[] = [
     key: "prd-smart-notifications",
     type: "prd",
     title: "Smart Notifications & Digest System",
-    status: "active",
     content: doc(
       heading(1, "Smart Notifications & Digest System"),
       heading(2, "Problem Statement"),

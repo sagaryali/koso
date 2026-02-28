@@ -399,7 +399,6 @@ export default function InsightsPage() {
           type: "prd",
           title: specTitle,
           content: placeholderSpecDoc(),
-          status: "draft",
           source_cluster_ids: selectedClusters.map((c) => c.id),
         })
         .select("id")
