@@ -417,9 +417,9 @@ export const AI_ACTIONS: AIAction[] = [
     description:
       "Find evidence not connected to any spec, group into themes, and suggest what could become new specs",
     promptTemplate:
-      "You are given a workspace overview including unlinked evidence (not connected to any spec), evidence clusters, and all current specifications.\n\n" +
-      "Analyze the unaddressed feedback:\n\n" +
-      "1. Unlinked evidence themes - Group the unlinked evidence into themes. For each theme:\n" +
+      "You are given a workspace overview including evidence clusters and all current specifications.\n\n" +
+      "Analyze the feedback that hasn't been addressed in specs:\n\n" +
+      "1. Unaddressed evidence themes - Group evidence that has no matching spec into themes. For each theme:\n" +
       "   - Theme name and description\n" +
       "   - Number of evidence items\n" +
       "   - Representative examples (quote 2-3 specific items)\n" +

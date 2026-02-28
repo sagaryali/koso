@@ -2,22 +2,18 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Link2, Code, ExternalLink, Quote } from "lucide-react";
+import { Code, Quote } from "lucide-react";
 import { Badge, Dialog, Skeleton, Icon } from "@/components/ui";
-import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
-import type { ContextSearchResult, MarketSearchResult, Evidence } from "@/types";
+import type { ContextSearchResult, Evidence, FeasibilityAssessment } from "@/types";
 import type { SeededSpec, SeededCodeModule, SeededContextData } from "@/hooks/use-seeded-context";
 import type { SectionConfig } from "@/lib/section-config";
+import { useSourceEvidence } from "@/hooks/use-source-evidence";
 
 interface ContextPanelProps {
   relatedSpecs: ContextSearchResult[];
   customerEvidence: ContextSearchResult[];
   codeContext: ContextSearchResult[];
-  marketSignals: MarketSearchResult[];
-  marketSignalsLoading: boolean;
-  marketSignalsCached: boolean;
-  marketSignalsError: string | null;
   loading: boolean;
   artifactId: string;
   workspaceId: string;
@@ -30,6 +26,9 @@ interface ContextPanelProps {
   sectionConfig?: SectionConfig | null;
   panelJustOpened?: boolean;
   onInsertCitation?: (text: string, source: string) => void;
+  feasibilityAssessment?: FeasibilityAssessment | null;
+  feasibilityLoading?: boolean;
+  sourceClusterIds?: string[];
 }
 
 function SectionLabel({ children }: { children: React.ReactNode }) {
@@ -59,76 +58,27 @@ function StaggerItem({ children, index }: { children: React.ReactNode; index: nu
   );
 }
 
-function SimilarityDots({ similarity }: { similarity: number }) {
-  const filled = Math.round(similarity * 5);
-  return (
-    <div className="flex items-center gap-0.5">
-      {Array.from({ length: 5 }).map((_, i) => (
-        <div
-          key={i}
-          className={cn(
-            "h-1.5 w-1.5",
-            i < filled ? "bg-text-primary" : "bg-border-default"
-          )}
-        />
-      ))}
-    </div>
-  );
-}
-
 // --- Related Specs (search-driven) ---
 
 function RelatedSpecCard({
   result,
-  artifactId,
-  workspaceId,
 }: {
   result: ContextSearchResult;
-  artifactId: string;
-  workspaceId: string;
 }) {
   const router = useRouter();
-  const supabase = createClient();
   const title = (result.metadata?.title as string) || "Untitled";
-  const similarity = Math.round(result.similarity * 100);
-  const [linked, setLinked] = useState(false);
-
-  const handleLink = async (e: React.MouseEvent) => {
-    e.stopPropagation();
-    await supabase.from("links").insert({
-      workspace_id: workspaceId,
-      source_id: artifactId,
-      source_type: "artifact",
-      target_id: result.sourceId,
-      target_type: result.sourceType,
-      relationship: "related",
-    });
-    setLinked(true);
-  };
 
   return (
     <div
       className="cursor-pointer border border-border-default p-3 hover:border-border-strong"
       onClick={() => router.push(`/editor/${result.sourceId}`)}
     >
-      <div className="flex items-start justify-between gap-2">
-        <span className="line-clamp-1 text-[13px] font-medium text-text-primary">
-          {title}
-        </span>
-        <span className="shrink-0 text-[11px] text-text-tertiary">
-          {similarity}%
-        </span>
-      </div>
+      <span className="line-clamp-1 text-[13px] font-medium text-text-primary">
+        {title}
+      </span>
       <p className="mt-1 line-clamp-2 text-xs text-text-secondary">
         {result.chunkText}
       </p>
-      <button
-        className="mt-2 inline-flex cursor-pointer items-center gap-1 border-none bg-transparent p-0 text-[11px] text-text-tertiary hover:text-text-primary"
-        onClick={handleLink}
-      >
-        <Icon icon={Link2} size={12} />
-        {linked ? "Linked" : "Link to this spec"}
-      </button>
     </div>
   );
 }
@@ -229,7 +179,6 @@ function CodeModuleCard({ result }: { result: ContextSearchResult }) {
   const isLong = lines.length > CODE_PREVIEW_LINES;
   const displayedCode = expanded ? fullCode : lines.slice(0, CODE_PREVIEW_LINES).join("\n");
 
-  // Reset expanded state when dialog closes
   const handleClose = () => {
     setOpen(false);
     setExpanded(false);
@@ -241,12 +190,9 @@ function CodeModuleCard({ result }: { result: ContextSearchResult }) {
         className="cursor-pointer border border-border-default p-3 hover:border-border-strong"
         onClick={() => setOpen(true)}
       >
-        <div className="flex items-start justify-between gap-2">
-          <span className="line-clamp-1 font-mono text-xs font-medium text-text-primary">
-            {filePath}
-          </span>
-          <SimilarityDots similarity={result.similarity} />
-        </div>
+        <span className="line-clamp-1 font-mono text-xs font-medium text-text-primary">
+          {filePath}
+        </span>
         {moduleType && (
           <div className="mt-1.5">
             <Badge>{moduleType}</Badge>
@@ -295,31 +241,71 @@ function CodeModuleCard({ result }: { result: ContextSearchResult }) {
   );
 }
 
-// --- Market Signals (shared between seeded and search-driven) ---
+// --- Code Notes Section (lightweight feasibility) ---
 
-function MarketSignalCard({ result }: { result: MarketSearchResult }) {
+function CodeNotesSection({
+  assessment,
+  loading: feasibilityLoading,
+  hasCodebase,
+  hasContent,
+}: {
+  assessment: FeasibilityAssessment | null | undefined;
+  loading: boolean;
+  hasCodebase: boolean;
+  hasContent: boolean;
+}) {
+  if (!hasCodebase || !hasContent) return null;
+
   return (
-    <a
-      href={result.url}
-      target="_blank"
-      rel="noopener noreferrer"
-      className="block space-y-1 border border-border-default p-3 hover:border-border-strong"
-    >
-      <div className="flex items-start justify-between gap-2">
-        <span className="line-clamp-1 text-[13px] font-medium text-text-primary">
-          {result.title}
-        </span>
-        <Icon
-          icon={ExternalLink}
-          size={12}
-          className="mt-0.5 shrink-0 text-text-tertiary"
-        />
+    <section>
+      <SectionLabel>Code notes</SectionLabel>
+      <SectionDivider />
+      <div className="mt-3">
+        {feasibilityLoading ? (
+          <div className="space-y-3">
+            <Skeleton variant="text" width="60%" />
+            <Skeleton variant="list" lines={2} />
+          </div>
+        ) : assessment ? (
+          <div className="space-y-3">
+            {/* Modules this section touches */}
+            {assessment.affectedModules.length > 0 && (
+              <div>
+                <div className="text-[11px] font-medium text-text-tertiary">Modules touched</div>
+                <div className="mt-1.5 flex flex-wrap gap-1.5">
+                  {assessment.affectedModules.map((mod) => (
+                    <div
+                      key={mod}
+                      className="border border-border-default bg-bg-secondary px-2 py-1 font-mono text-[11px] text-text-primary"
+                    >
+                      {mod}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Reusable patterns */}
+            {assessment.buildingBlocks.length > 0 && (
+              <div>
+                <div className="text-[11px] font-medium text-text-tertiary">Reusable patterns</div>
+                <ul className="mt-1.5 space-y-1">
+                  {assessment.buildingBlocks.map((block, i) => (
+                    <li key={i} className="text-xs text-text-secondary">
+                      {block}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </div>
+        ) : (
+          <p className="text-xs text-text-tertiary">
+            Start writing to see which modules this section touches
+          </p>
+        )}
       </div>
-      <p className="line-clamp-2 text-xs text-text-secondary">
-        {result.snippet}
-      </p>
-      <Badge>{result.source}</Badge>
-    </a>
+    </section>
   );
 }
 
@@ -433,10 +419,6 @@ export function ContextPanel({
   relatedSpecs,
   customerEvidence,
   codeContext,
-  marketSignals,
-  marketSignalsLoading,
-  marketSignalsCached,
-  marketSignalsError,
   loading,
   artifactId,
   workspaceId,
@@ -449,14 +431,24 @@ export function ContextPanel({
   sectionConfig,
   panelJustOpened,
   onInsertCitation,
+  feasibilityAssessment,
+  feasibilityLoading,
+  sourceClusterIds,
 }: ContextPanelProps) {
+  // Review mode: spec was AI-drafted from evidence clusters
+  const isReviewMode = (sourceClusterIds?.length ?? 0) > 0;
+
+  // Fetch source evidence for review mode
+  const {
+    sourceEvidence,
+    sourceEvidenceIds,
+    loading: sourceEvidenceLoading,
+  } = useSourceEvidence(isReviewMode ? sourceClusterIds : undefined);
+
   // Seeded view for empty specs
   if (isEmpty) {
     const showCodeSection =
       seededContext.codeModules.length > 0 || codebaseStatus === "syncing";
-    const showMarketSection =
-      seededContext.marketSignals.length > 0 ||
-      (seededContext.loading && seededContext.marketSignals.length === 0);
 
     return (
       <div className="space-y-6 p-6">
@@ -534,29 +526,6 @@ export function ContextPanel({
             </div>
           </section>
         )}
-
-        {/* Market Context */}
-        {showMarketSection && (
-          <section>
-            <SectionLabel>
-              {productName ? `Market context for ${productName}` : "Market context"}
-            </SectionLabel>
-            <SectionDivider />
-            <div className="mt-3 space-y-2">
-              {seededContext.loading ? (
-                <Skeleton variant="list" lines={3} />
-              ) : (
-                <StaggeredList>
-                  {seededContext.marketSignals.map((r, i) => (
-                    <StaggerItem key={`${r.url}-${i}`} index={i}>
-                      <MarketSignalCard result={r} />
-                    </StaggerItem>
-                  ))}
-                </StaggeredList>
-              )}
-            </div>
-          </section>
-        )}
       </div>
     );
   }
@@ -566,19 +535,34 @@ export function ContextPanel({
   const isCodeFirst = codeWeight > 0.6;
   const isEvidenceFirst = codeWeight < 0.3;
 
-  // Section header reflects context strategy
+  // Section header reflects mode and context strategy
   const headerLabel = currentSectionName
-    ? isEvidenceFirst
-      ? `Evidence for: ${currentSectionName}`
-      : isCodeFirst
-        ? `Code context for: ${currentSectionName}`
-        : `Context for: ${currentSectionName}`
-    : "Context";
+    ? isReviewMode
+      ? `Review: ${currentSectionName}`
+      : isEvidenceFirst
+        ? `Evidence for: ${currentSectionName}`
+        : isCodeFirst
+          ? `Code context for: ${currentSectionName}`
+          : `Context for: ${currentSectionName}`
+    : isReviewMode
+      ? "Review"
+      : "Context";
+
+  // Section guidance adapts to mode
+  const guidanceText = isReviewMode
+    ? "Verify the evidence behind this section"
+    : sectionConfig?.guidance ?? null;
 
   // Search-driven view (existing behavior)
   const hasCodeResults = codeContext.length > 0;
 
-  // Build orderable content sections
+  // --- Review mode: evidence gaps = search results minus source evidence ---
+  const evidenceGaps = isReviewMode
+    ? customerEvidence.filter((r) => !sourceEvidenceIds.has(r.sourceId))
+    : [];
+
+  // --- Writing mode sections ---
+
   const evidenceSection = (
     <section key="evidence">
       <SectionLabel>Customer Evidence</SectionLabel>
@@ -652,11 +636,7 @@ export function ContextPanel({
           <StaggeredList>
             {relatedSpecs.map((r, i) => (
               <StaggerItem key={r.id} index={i}>
-                <RelatedSpecCard
-                  result={r}
-                  artifactId={artifactId}
-                  workspaceId={workspaceId}
-                />
+                <RelatedSpecCard result={r} />
               </StaggerItem>
             ))}
           </StaggeredList>
@@ -669,12 +649,89 @@ export function ContextPanel({
     </section>
   );
 
-  // Order sections by codeWeight
-  const contentSections = isCodeFirst
-    ? [codeSection, evidenceSection, specsSection]
-    : isEvidenceFirst
-      ? [evidenceSection, specsSection, codeSection]
-      : [specsSection, evidenceSection, codeSection];
+  // --- Review mode sections ---
+
+  const sourceEvidenceSection = (
+    <section key="source-evidence">
+      <SectionLabel>Source evidence</SectionLabel>
+      <SectionDivider />
+      <div className="mt-3 space-y-3">
+        {sourceEvidenceLoading ? (
+          <Skeleton variant="list" lines={3} />
+        ) : sourceEvidence.length > 0 ? (
+          <StaggeredList>
+            {sourceEvidence.map((e, i) => (
+              <StaggerItem key={e.id} index={i}>
+                <SeededEvidenceCard evidence={e} />
+              </StaggerItem>
+            ))}
+          </StaggeredList>
+        ) : (
+          <p className="text-xs text-text-tertiary">
+            No source evidence found for this spec
+          </p>
+        )}
+      </div>
+    </section>
+  );
+
+  const evidenceGapsSection = (
+    <section key="evidence-gaps">
+      <SectionLabel>Evidence gaps</SectionLabel>
+      <SectionDivider />
+      <div className="mt-3 space-y-3">
+        {loading ? (
+          <Skeleton variant="list" lines={2} />
+        ) : evidenceGaps.length > 0 ? (
+          <StaggeredList>
+            {evidenceGaps.map((r, i) => (
+              <StaggerItem key={r.id} index={i}>
+                <EvidenceCard result={r} onInsertCitation={onInsertCitation} />
+              </StaggerItem>
+            ))}
+          </StaggeredList>
+        ) : (
+          <p className="text-xs text-text-tertiary">
+            No additional evidence found beyond what was used
+          </p>
+        )}
+      </div>
+    </section>
+  );
+
+  const potentialConflictsSection = (
+    <section key="conflicts">
+      <SectionLabel>Potential conflicts</SectionLabel>
+      <SectionDivider />
+      <div className="mt-3 space-y-2">
+        {loading ? (
+          <Skeleton variant="list" lines={2} />
+        ) : relatedSpecs.length > 0 ? (
+          <StaggeredList>
+            {relatedSpecs.map((r, i) => (
+              <StaggerItem key={r.id} index={i}>
+                <RelatedSpecCard result={r} />
+              </StaggerItem>
+            ))}
+          </StaggeredList>
+        ) : (
+          <p className="text-xs text-text-tertiary">
+            No conflicting specs detected
+          </p>
+        )}
+      </div>
+    </section>
+  );
+
+  // --- Section ordering ---
+
+  const contentSections = isReviewMode
+    ? [sourceEvidenceSection, evidenceGapsSection, potentialConflictsSection]
+    : isCodeFirst
+      ? [codeSection, evidenceSection, specsSection]
+      : isEvidenceFirst
+        ? [evidenceSection, specsSection, codeSection]
+        : [specsSection, evidenceSection, codeSection];
 
   return (
     <div className="space-y-6 p-6">
@@ -694,46 +751,22 @@ export function ContextPanel({
       </div>
 
       {/* Section guidance hint */}
-      {sectionConfig && sectionConfig.guidance && (
+      {guidanceText && (
         <div className="text-xs text-text-tertiary italic">
-          {sectionConfig.guidance}
+          {guidanceText}
         </div>
       )}
 
       {/* Ordered content sections */}
       {contentSections}
 
-      {/* Market Signals */}
-      <section>
-        <div className="flex items-center gap-2">
-          <SectionLabel>Market Signals</SectionLabel>
-          {marketSignalsCached && marketSignals.length > 0 && (
-            <span className="text-[10px] text-text-tertiary">(cached)</span>
-          )}
-        </div>
-        <SectionDivider />
-        <div className="mt-3 space-y-2">
-          {marketSignalsLoading ? (
-            <Skeleton variant="list" lines={3} />
-          ) : marketSignalsError ? (
-            <p className="text-xs text-text-tertiary">
-              {marketSignalsError}
-            </p>
-          ) : marketSignals.length > 0 ? (
-            <StaggeredList>
-              {marketSignals.map((r, i) => (
-                <StaggerItem key={`${r.url}-${i}`} index={i}>
-                  <MarketSignalCard result={r} />
-                </StaggerItem>
-              ))}
-            </StaggeredList>
-          ) : (
-            <p className="text-sm text-text-tertiary">
-              Market research will appear here as you describe features
-            </p>
-          )}
-        </div>
-      </section>
+      {/* Code notes (both modes) */}
+      <CodeNotesSection
+        assessment={feasibilityAssessment}
+        loading={feasibilityLoading ?? false}
+        hasCodebase={hasCodebase}
+        hasContent={!isEmpty}
+      />
     </div>
   );
 }

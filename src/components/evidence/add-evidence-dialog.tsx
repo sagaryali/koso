@@ -180,33 +180,7 @@ export function AddEvidenceDialog({
       body: JSON.stringify({ workspaceId }),
     }).catch(() => {});
 
-    // Auto-link to similar artifacts (embedding is now ready)
-    try {
-      const linkRes = await fetch("/api/links/auto", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          sourceId: data.id,
-          sourceType: "evidence",
-          workspaceId,
-        }),
-      });
-
-      if (linkRes.ok) {
-        const { linksCreated } = await linkRes.json();
-        if (linksCreated > 0) {
-          toast({
-            message: `Added to evidence pool. Linked to ${linksCreated} spec${linksCreated !== 1 ? "s" : ""}.`,
-          });
-        } else {
-          toast({ message: "Added to evidence pool" });
-        }
-      } else {
-        toast({ message: "Added to evidence pool" });
-      }
-    } catch {
-      toast({ message: "Added to evidence pool" });
-    }
+    toast({ message: "Added to evidence pool" });
 
     setSaving(false);
     onCreated?.(data.id);
@@ -315,33 +289,7 @@ export function AddEvidenceDialog({
         // Silent fail
       }
 
-      // Auto-link
-      try {
-        const linkRes = await fetch("/api/links/auto", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            sourceId: data.id,
-            sourceType: "evidence",
-            workspaceId,
-          }),
-        });
-
-        if (linkRes.ok) {
-          const { linksCreated } = await linkRes.json();
-          if (linksCreated > 0) {
-            toast({
-              message: `File uploaded. Linked to ${linksCreated} spec${linksCreated !== 1 ? "s" : ""}.`,
-            });
-          } else {
-            toast({ message: "File uploaded to evidence pool" });
-          }
-        } else {
-          toast({ message: "File uploaded to evidence pool" });
-        }
-      } catch {
-        toast({ message: "File uploaded to evidence pool" });
-      }
+      toast({ message: "File uploaded to evidence pool" });
 
       setFileUploading(false);
       setSaving(false);

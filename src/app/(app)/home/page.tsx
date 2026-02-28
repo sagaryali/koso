@@ -101,7 +101,6 @@ export default function HomePage() {
   const [recentArtifacts, setRecentArtifacts] = useState<Artifact[]>([]);
   const [recentEvidence, setRecentEvidence] = useState<Evidence[]>([]);
   const [evidenceCount, setEvidenceCount] = useState(0);
-  const [unlinkedCount, setUnlinkedCount] = useState(0);
   const [draftCount, setDraftCount] = useState(0);
   const [loading, setLoading] = useState(true);
 
@@ -151,8 +150,6 @@ export default function HomePage() {
         { data: artifacts },
         { data: evidence },
         { count: evCount },
-        { data: allEvidenceIds },
-        { data: linkedSourceIds },
         { count: drafts },
       ] = await Promise.all([
         supabase
@@ -171,12 +168,6 @@ export default function HomePage() {
           .from("evidence")
           .select("id", { count: "exact" })
           .eq("workspace_id", wsId),
-        supabase.from("evidence").select("id").eq("workspace_id", wsId),
-        supabase
-          .from("links")
-          .select("source_id")
-          .eq("workspace_id", wsId)
-          .eq("source_type", "evidence"),
         supabase
           .from("artifacts")
           .select("id", { count: "exact" })
@@ -188,16 +179,6 @@ export default function HomePage() {
       if (evidence) setRecentEvidence(evidence);
       setEvidenceCount(evCount ?? 0);
       setDraftCount(drafts ?? 0);
-
-      if (allEvidenceIds && linkedSourceIds) {
-        const linkedSet = new Set(
-          linkedSourceIds.map((l: { source_id: string }) => l.source_id)
-        );
-        const unlinked = allEvidenceIds.filter(
-          (e: { id: string }) => !linkedSet.has(e.id)
-        );
-        setUnlinkedCount(unlinked.length);
-      }
 
       setLoading(false);
     }
@@ -479,9 +460,6 @@ export default function HomePage() {
   function getSubtitle(): { text: string; clickable: boolean } {
     if (connection?.status === "syncing" || connection?.status === "pending") {
       return { text: "Indexing your codebase \u2014 code context will appear shortly", clickable: false };
-    }
-    if (unlinkedCount > 0) {
-      return { text: `You have ${unlinkedCount} piece${unlinkedCount !== 1 ? "s" : ""} of unlinked feedback`, clickable: false };
     }
     if (draftCount > 0) {
       return { text: `${draftCount} spec${draftCount !== 1 ? "s are" : " is"} still in draft`, clickable: false };
@@ -783,22 +761,6 @@ export default function HomePage() {
               </div>
             ) : null}
           </div>
-
-          {/* Unlinked evidence nudge */}
-          {unlinkedCount > 3 && (
-            <div className="mt-6 border border-border-default bg-bg-secondary px-4 py-3">
-              <p className="text-sm text-text-secondary">
-                You have{" "}
-                <button
-                  onClick={() => router.push("/evidence?filter=unlinked")}
-                  className="cursor-pointer font-medium text-text-primary underline"
-                >
-                  {unlinkedCount} unlinked evidence items
-                </button>
-                . Consider linking them to specs or starting a new spec from evidence.
-              </p>
-            </div>
-          )}
 
           {/* Quick-add evidence */}
           <div className="mt-10" data-tour="home-quick-add">

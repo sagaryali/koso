@@ -10,6 +10,7 @@ import { StreamedMarkdown } from "@/components/ui/streamed-markdown";
 import { textToTiptap } from "@/lib/text-to-tiptap";
 import { sectionsToTiptapDoc } from "@/lib/sections-to-tiptap";
 import { createClient } from "@/lib/supabase/client";
+import { cn } from "@/lib/utils";
 import type { Evidence, Workspace } from "@/types";
 
 // --- Types ---
@@ -131,6 +132,7 @@ export function EvidenceFlow({
     new Set()
   );
   const [codeContext, setCodeContext] = useState<CodeContext | null>(null);
+  const [effortMap, setEffortMap] = useState<Record<string, { effortLevel: string; affectedModuleCount: number }>>({});
 
   // Step 3: Spec draft (structured sections)
   const [specText, setSpecText] = useState("");
@@ -264,7 +266,38 @@ export function EvidenceFlow({
       }
 
       const data = await res.json();
-      setClusters(data.clusters || []);
+      const computedClusters: Cluster[] = data.clusters || [];
+      setClusters(computedClusters);
+
+      // Fire-and-forget: estimate effort per cluster if codebase is connected
+      if (hasCodebase && computedClusters.length > 0 && fetchedCodeContext) {
+        fetch("/api/ai/estimate-effort", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            clusters: computedClusters.map((c) => ({
+              label: c.label,
+              summary: c.summary,
+              evidenceCount: c.items.length,
+            })),
+            modules: fetchedCodeContext.modules || [],
+            architectureSummary: fetchedCodeContext.architectureSummary,
+          }),
+        })
+          .then(async (effortRes) => {
+            if (effortRes.ok) {
+              const { estimates } = await effortRes.json();
+              if (Array.isArray(estimates)) {
+                const map: Record<string, { effortLevel: string; affectedModuleCount: number }> = {};
+                for (const est of estimates) {
+                  map[est.label] = { effortLevel: est.effortLevel, affectedModuleCount: est.affectedModuleCount };
+                }
+                setEffortMap(map);
+              }
+            }
+          })
+          .catch(() => {});
+      }
     } catch (err) {
       console.error("[evidence-flow] Cluster error:", err);
       setClusters([
@@ -417,6 +450,52 @@ export function EvidenceFlow({
     const firstTheme = clusters.find((_, i) => selectedClusterIndices.has(i));
     const title = firstTheme ? firstTheme.label : "Untitled Spec";
 
+    // Persist selected clusters to evidence_clusters and collect their UUIDs
+    const selectedClusters = clusters.filter((_, i) =>
+      selectedClusterIndices.has(i)
+    );
+
+    const clusterUUIDs: string[] = [];
+    const allEvidenceIds: string[] = [];
+
+    if (selectedClusters.length > 0) {
+      for (const cluster of selectedClusters) {
+        // Map ephemeral cluster item indices to actual evidence UUIDs
+        const evidenceIds = cluster.items
+          .map((idx) => feedbackItems[idx]?.id)
+          .filter(Boolean);
+
+        // Build summary with effort context if available
+        const effort = effortMap[cluster.label];
+        const summaryWithEffort = effort
+          ? `${cluster.summary} [Effort: ${effort.effortLevel}, ${effort.affectedModuleCount} modules affected]`
+          : cluster.summary;
+
+        const { data: upserted } = await supabase
+          .from("evidence_clusters")
+          .upsert(
+            {
+              workspace_id: workspaceId,
+              label: cluster.label,
+              summary: summaryWithEffort,
+              evidence_ids: evidenceIds,
+              evidence_count: evidenceIds.length,
+              section_relevance: effort
+                ? { effort_level: effort.effortLevel, affected_module_count: effort.affectedModuleCount }
+                : {},
+            },
+            { onConflict: "id" }
+          )
+          .select("id")
+          .single();
+
+        if (upserted) {
+          clusterUUIDs.push(upserted.id);
+        }
+        allEvidenceIds.push(...evidenceIds);
+      }
+    }
+
     const { data: artifact } = await supabase
       .from("artifacts")
       .insert({
@@ -425,6 +504,7 @@ export function EvidenceFlow({
         title,
         content,
         status: "draft",
+        source_cluster_ids: clusterUUIDs,
       })
       .select("id")
       .single();
@@ -674,7 +754,21 @@ export function EvidenceFlow({
                           : "border-border-default"
                       }`}
                     >
-                      <h3 className="text-sm font-medium">{cluster.label}</h3>
+                      <div className="flex items-center gap-2">
+                        <h3 className="text-sm font-medium">{cluster.label}</h3>
+                        {effortMap[cluster.label] && (
+                          <span className={cn(
+                            "px-1.5 py-0.5 text-[10px] font-medium",
+                            effortMap[cluster.label].effortLevel === "Quick Win"
+                              ? "bg-green-100 text-green-800"
+                              : effortMap[cluster.label].effortLevel === "Medium"
+                                ? "bg-yellow-100 text-yellow-800"
+                                : "bg-red-100 text-red-800"
+                          )}>
+                            {effortMap[cluster.label].effortLevel}
+                          </span>
+                        )}
+                      </div>
                       <p className="mt-1 text-xs text-text-secondary">
                         {cluster.summary}
                       </p>

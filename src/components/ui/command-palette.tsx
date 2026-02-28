@@ -47,6 +47,7 @@ import { streamCompletion } from "@/lib/ai/stream";
 import { createClient } from "@/lib/supabase/client";
 import { useCodebaseStatus } from "@/hooks/use-codebase-status";
 import { StreamedMarkdown } from "@/components/ui/streamed-markdown";
+import { fetchWorkspaceOverview, type WorkspaceOverview } from "@/lib/workspace-overview";
 
 const ACTION_ICONS: Record<string, LucideIcon> = {
   whos_asking: Users,
@@ -173,7 +174,6 @@ interface FetchedContext {
   workspaceOverview?: {
     clusters: { label: string; summary: string; count: number }[];
     allSpecs: { title: string; type: string; status: string }[];
-    unlinkedEvidence: { title: string; content: string }[];
     totalEvidenceCount: number;
   };
 }
@@ -295,90 +295,6 @@ async function fetchContext(
     architectureSummary,
     marketResearch:
       marketResult.status === "fulfilled" ? marketResult.value ?? undefined : undefined,
-  };
-}
-
-interface WorkspaceOverview {
-  clusters: { label: string; summary: string; count: number }[];
-  allSpecs: { title: string; type: string; status: string }[];
-  unlinkedEvidence: { title: string; content: string }[];
-  totalEvidenceCount: number;
-}
-
-async function fetchWorkspaceOverview(
-  workspaceId: string,
-  supabase: ReturnType<typeof createClient>
-): Promise<WorkspaceOverview> {
-  const [clustersResult, artifactsResult, evidenceResult, linksResult] =
-    await Promise.allSettled([
-      supabase
-        .from("evidence_clusters")
-        .select("label, summary, evidence_count")
-        .eq("workspace_id", workspaceId)
-        .order("evidence_count", { ascending: false }),
-      supabase
-        .from("artifacts")
-        .select("id, title, type, status")
-        .eq("workspace_id", workspaceId)
-        .neq("type", "architecture_summary")
-        .order("updated_at", { ascending: false }),
-      supabase
-        .from("evidence")
-        .select("id, title, content")
-        .eq("workspace_id", workspaceId),
-      supabase
-        .from("links")
-        .select("evidence_id")
-        .eq("workspace_id", workspaceId),
-    ]);
-
-  const clusters =
-    clustersResult.status === "fulfilled" && clustersResult.value.data
-      ? clustersResult.value.data.map(
-          (c: { label: string; summary: string; evidence_count: number }) => ({
-            label: c.label,
-            summary: c.summary || "",
-            count: c.evidence_count,
-          })
-        )
-      : [];
-
-  const allSpecs =
-    artifactsResult.status === "fulfilled" && artifactsResult.value.data
-      ? artifactsResult.value.data.map(
-          (a: { title: string; type: string; status: string }) => ({
-            title: a.title,
-            type: a.type,
-            status: a.status || "draft",
-          })
-        )
-      : [];
-
-  const allEvidence =
-    evidenceResult.status === "fulfilled" && evidenceResult.value.data
-      ? evidenceResult.value.data
-      : [];
-
-  const linkedIds = new Set(
-    linksResult.status === "fulfilled" && linksResult.value.data
-      ? linksResult.value.data.map(
-          (l: { evidence_id: string }) => l.evidence_id
-        )
-      : []
-  );
-
-  const unlinkedEvidence = allEvidence
-    .filter((e: { id: string }) => !linkedIds.has(e.id))
-    .map((e: { title: string; content: string }) => ({
-      title: e.title || "Untitled",
-      content: e.content || "",
-    }));
-
-  return {
-    clusters,
-    allSpecs,
-    unlinkedEvidence,
-    totalEvidenceCount: allEvidence.length,
   };
 }
 

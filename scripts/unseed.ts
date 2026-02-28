@@ -64,7 +64,7 @@ async function main() {
   console.log(`Found demo user: ${demoUser.id}`);
 
   // Delete workspaces first (cascades to all child tables)
-  console.log("Deleting workspaces (cascades to artifacts, evidence, links, embeddings, codebase, cache)...");
+  console.log("Deleting workspaces (cascades to artifacts, evidence, embeddings, codebase, cache)...");
   const { error: wsError } = await supabase
     .from("workspaces")
     .delete()

@@ -7,7 +7,6 @@ export type SeedEvidence = {
   content: string;
   source: string | null;
   tags: string[];
-  linkedArtifactKeys?: string[];
 };
 
 export const EVIDENCE: SeedEvidence[] = [
@@ -20,7 +19,7 @@ export const EVIDENCE: SeedEvidence[] = [
       "The notification system is overwhelming. I get pinged for every comment even on threads I'm not following. I've started ignoring all notifications which means I miss the important ones. Can we get some kind of smart filtering?",
     source: "User interview — Sarah K., Engineering Lead at Rentify",
     tags: ["notifications", "ux", "retention-risk"],
-    linkedArtifactKeys: ["principle-async"],
+
   },
   {
     key: "fb-onboarding",
@@ -39,7 +38,7 @@ export const EVIDENCE: SeedEvidence[] = [
       "I check TaskFlow on my phone during my commute to triage overnight tasks. The mobile web loads slowly (I counted 5 seconds last time) and the task cards are too small to tap accurately. I end up waiting until I get to my laptop which defeats the purpose.",
     source: "NPS survey response — anonymous, Enterprise plan",
     tags: ["mobile", "performance", "triage"],
-    linkedArtifactKeys: ["prd-mobile"],
+
   },
   {
     key: "fb-keyboard",
@@ -49,7 +48,7 @@ export const EVIDENCE: SeedEvidence[] = [
       "The keyboard shortcuts are the reason I switched from Jira. j/k navigation, quick-assign with 'a', and the command palette are amazing. But I wish I could customize them and add macros for repetitive workflows like moving a task to review + assigning a reviewer.",
     source: "Twitter DM from @devtools_sarah",
     tags: ["keyboard", "power-users", "workflow"],
-    linkedArtifactKeys: ["principle-async"],
+
   },
   {
     key: "fb-collab",
@@ -59,7 +58,7 @@ export const EVIDENCE: SeedEvidence[] = [
       "During sprint planning, our team of 6 all needs to update task estimates and descriptions simultaneously. Right now we take turns which wastes 30 minutes per session. If we could all edit at once like Google Docs, sprint planning would take half the time.",
     source: "Customer call — Priya M., PM at CloudScale",
     tags: ["collaboration", "sprint-planning", "real-time"],
-    linkedArtifactKeys: ["prd-realtime"],
+
   },
   // --- Metrics ---
   {
@@ -70,7 +69,6 @@ export const EVIDENCE: SeedEvidence[] = [
       "Sprint velocity decreased 15% (from 34 to 29 story points average) in the 4 weeks after we introduced mandatory code reviews. However, bug escape rate dropped 42% in the same period. The net impact on delivery timeline is roughly neutral when accounting for reduced rework.",
     source: "Engineering Analytics Dashboard — Jan 2026",
     tags: ["velocity", "code-review", "quality"],
-    linkedArtifactKeys: ["story-code-review"],
   },
   {
     key: "met-adoption",
@@ -80,7 +78,6 @@ export const EVIDENCE: SeedEvidence[] = [
       "68% of weekly active users have viewed the board at least once in the past 30 days. Of those, 41% use the board as their primary navigation (vs. list view at 52%, calendar at 7%). Board users complete tasks 12% faster on average, likely due to better visual context of work in progress.",
     source: "Product Analytics — Mixpanel",
     tags: ["adoption", "board", "engagement"],
-    linkedArtifactKeys: ["story-sprint-board"],
   },
   {
     key: "met-retention",
@@ -109,7 +106,6 @@ export const EVIDENCE: SeedEvidence[] = [
       "Linear: Fastest-growing competitor. Keyboard-first UX, beautiful design, auto-scheduling. Weakness: limited customization, no self-hosted option. Height: Spreadsheet-like flexibility with real-time collaboration. Strength: AI task generation. Weakness: learning curve, smaller ecosystem. Shortcut: Focused on engineering teams. Good GitHub integration and cycles. Weakness: outdated UI, slow feature velocity. Key insight: all three are investing heavily in AI-assisted project management. Linear launched 'Auto-prioritize' in Q4 2025. We're behind on AI features.",
     source: "PM competitive review — January 2026",
     tags: ["competitors", "market", "ai"],
-    linkedArtifactKeys: ["roadmap-q1"],
   },
   {
     key: "res-crdt",
@@ -119,7 +115,6 @@ export const EVIDENCE: SeedEvidence[] = [
       "Yjs: More mature, larger ecosystem. Used by Notion, Figma, and Hocuspocus. ~15KB gzipped. Excellent performance up to 100 concurrent editors. Well-documented WebSocket provider. Downside: harder to reason about conflict resolution, less predictable memory usage. Automerge: Cleaner API, better conflict semantics. Used by Ink & Switch projects. ~45KB gzipped. Good for document-like data but less proven at scale. New Rust implementation is fast but the JS bindings are still maturing. Recommendation: Yjs for our use case. The ecosystem maturity and performance at our scale (2-8 collaborators) makes it the safer choice.",
     source: "Engineering spike — Wei L., Senior Engineer",
     tags: ["technical", "crdt", "real-time", "architecture"],
-    linkedArtifactKeys: ["prd-realtime", "decision-database"],
   },
   {
     key: "res-mobile-market",
@@ -129,7 +124,7 @@ export const EVIDENCE: SeedEvidence[] = [
       "Forrester reports that 47% of PMs use mobile devices for task management daily, up from 31% in 2024. The most common mobile actions: status updates (78%), comment replies (65%), notification triage (82%), and quick task creation (41%). Full editing is rare on mobile (12%). Implication: our mobile app should optimize for quick actions and triage rather than full editing capabilities.",
     source: "Forrester Research — Q4 2025 Report",
     tags: ["mobile", "market", "research"],
-    linkedArtifactKeys: ["prd-mobile"],
+
   },
   // --- Meeting Notes ---
   {
@@ -149,6 +144,5 @@ export const EVIDENCE: SeedEvidence[] = [
       "Attendees: CEO, CTO, VP Product, VP Engineering. Key discussion: Board feature is landing well — usage metrics look strong. Leadership wants to see collaboration features in demo-ready state by end of Q1 for a potential Series B investor demo. CTO raised concerns about WebSocket infrastructure costs at scale — wants a cost projection before we commit to the approach. VP Eng asked about React Native feasibility for mobile — team needs to do a 1-week spike. Decision: Proceed with real-time collaboration as top priority. Mobile app moves to Q2 unless React Native spike shows we can parallelize.",
     source: "Stakeholder Review — Feb 10, 2026",
     tags: ["stakeholder", "strategy", "q1", "fundraising"],
-    linkedArtifactKeys: ["roadmap-q1", "prd-mobile"],
   },
 ];

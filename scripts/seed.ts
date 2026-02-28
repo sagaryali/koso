@@ -183,35 +183,7 @@ async function main() {
     console.log(`  [${ev.type}] ${ev.title}`);
   }
 
-  // 6. Create links (evidence -> artifact)
-  console.log("\nCreating links...");
-  let linkCount = 0;
-
-  for (const ev of EVIDENCE) {
-    if (!ev.linkedArtifactKeys?.length) continue;
-    const evidenceId = evidenceIdMap.get(ev.key);
-    if (!evidenceId) continue;
-
-    for (const artifactKey of ev.linkedArtifactKeys) {
-      const artifactId = artifactIdMap.get(artifactKey);
-      if (!artifactId) continue;
-
-      const { error } = await supabase.from("links").insert({
-        workspace_id: workspaceId,
-        source_id: evidenceId,
-        source_type: "evidence",
-        target_id: artifactId,
-        target_type: "artifact",
-        relationship: "supports",
-      });
-
-      if (!error) linkCount++;
-    }
-  }
-
-  console.log(`  Created ${linkCount} links`);
-
-  // 7. Create codebase connection
+  // 6. Create codebase connection
   console.log("\nCreating codebase connection...");
   const { data: connection, error: connError } = await supabase
     .from("codebase_connections")

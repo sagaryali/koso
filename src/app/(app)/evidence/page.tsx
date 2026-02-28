@@ -5,7 +5,6 @@ import { useSearchParams } from "next/navigation";
 import {
   Search,
   Plus,
-  Link as LinkIcon,
   X,
   Pencil,
   Trash2,
@@ -31,11 +30,10 @@ import { useTourTrigger } from "@/hooks/use-tour-trigger";
 import { EVIDENCE_TOUR } from "@/lib/tours";
 import type { Evidence, EvidenceType } from "@/types";
 
-type FilterType = "all" | "unlinked" | EvidenceType;
+type FilterType = "all" | EvidenceType;
 
 const FILTERS: { label: string; value: FilterType }[] = [
   { label: "All", value: "all" },
-  { label: "Unlinked", value: "unlinked" },
   { label: "Feedback", value: "feedback" },
   { label: "Metric", value: "metric" },
   { label: "Research", value: "research" },
@@ -63,17 +61,8 @@ function formatType(type: string) {
     .replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
-interface LinkedArtifact {
-  id: string;
-  title: string;
-}
-
-interface EvidenceWithLinks extends Evidence {
-  linkedArtifacts?: LinkedArtifact[];
-}
-
 export default function EvidencePage() {
-  const [evidence, setEvidence] = useState<EvidenceWithLinks[]>([]);
+  const [evidence, setEvidence] = useState<Evidence[]>([]);
   const { workspace } = useWorkspace();
   const workspaceId = workspace?.id ?? "";
 
@@ -85,10 +74,10 @@ export default function EvidencePage() {
     (searchParams.get("filter") as FilterType) || "all"
   );
   const [searchQuery, setSearchQuery] = useState("");
-  const [searchResults, setSearchResults] = useState<EvidenceWithLinks[] | null>(null);
+  const [searchResults, setSearchResults] = useState<Evidence[] | null>(null);
   const [searching, setSearching] = useState(false);
   const [addOpen, setAddOpen] = useState(false);
-  const [detailEvidence, setDetailEvidence] = useState<EvidenceWithLinks | null>(null);
+  const [detailEvidence, setDetailEvidence] = useState<Evidence | null>(null);
   const [editMode, setEditMode] = useState(false);
   const [editTitle, setEditTitle] = useState("");
   const [editContent, setEditContent] = useState("");
@@ -113,8 +102,7 @@ export default function EvidencePage() {
         .order("created_at", { ascending: false });
 
       if (evidenceData) {
-        const enriched = await enrichWithLinks(evidenceData, workspaceId);
-        setEvidence(enriched);
+        setEvidence(evidenceData);
       }
 
       setLoading(false);
@@ -122,60 +110,6 @@ export default function EvidencePage() {
 
     load();
   }, [workspaceId]);
-
-  async function enrichWithLinks(
-    items: Evidence[],
-    wsId: string
-  ): Promise<EvidenceWithLinks[]> {
-    const ids = items.map((e) => e.id);
-    if (ids.length === 0) return items;
-
-    const { data: links } = await supabase
-      .from("links")
-      .select("source_id, target_id, target_type")
-      .eq("workspace_id", wsId)
-      .eq("source_type", "evidence")
-      .in("source_id", ids);
-
-    if (!links || links.length === 0) return items;
-
-    const artifactIds = [
-      ...new Set(
-        links
-          .filter((l) => l.target_type === "artifact")
-          .map((l) => l.target_id)
-      ),
-    ];
-
-    let artifactMap = new Map<string, string>();
-    if (artifactIds.length > 0) {
-      const { data: artifacts } = await supabase
-        .from("artifacts")
-        .select("id, title")
-        .in("id", artifactIds);
-
-      if (artifacts) {
-        artifactMap = new Map(artifacts.map((a) => [a.id, a.title]));
-      }
-    }
-
-    const linksByEvidence = new Map<string, LinkedArtifact[]>();
-    for (const link of links) {
-      if (link.target_type === "artifact") {
-        const existing = linksByEvidence.get(link.source_id) ?? [];
-        const artTitle = artifactMap.get(link.target_id);
-        if (artTitle) {
-          existing.push({ id: link.target_id, title: artTitle });
-        }
-        linksByEvidence.set(link.source_id, existing);
-      }
-    }
-
-    return items.map((e) => ({
-      ...e,
-      linkedArtifacts: linksByEvidence.get(e.id) ?? [],
-    }));
-  }
 
   // Semantic search with debounce
   const handleSearchChange = useCallback(
@@ -245,8 +179,7 @@ export default function EvidencePage() {
         const ordered = evidenceIds
           .map((id) => map.get(id))
           .filter(Boolean) as Evidence[];
-        const enriched = await enrichWithLinks(ordered, workspaceId);
-        setSearchResults(enriched);
+        setSearchResults(ordered);
       }
     } catch {
       // Silent fail
@@ -269,11 +202,7 @@ export default function EvidencePage() {
   const filteredList =
     filter === "all"
       ? displayList
-      : filter === "unlinked"
-        ? displayList.filter(
-            (e) => !e.linkedArtifacts || e.linkedArtifacts.length === 0
-          )
-        : displayList.filter((e) => e.type === filter);
+      : displayList.filter((e) => e.type === filter);
 
   // Handle evidence creation
   function handleEvidenceCreated() {
@@ -287,8 +216,7 @@ export default function EvidencePage() {
         .order("created_at", { ascending: false });
 
       if (data) {
-        const enriched = await enrichWithLinks(data, workspaceId);
-        setEvidence(enriched);
+        setEvidence(data);
       }
     }
     reload();
@@ -511,20 +439,6 @@ export default function EvidencePage() {
                 <div className="text-xs text-text-tertiary">
                   {formatDate(item.created_at)}
                 </div>
-                {item.linkedArtifacts && item.linkedArtifacts.length > 0 ? (
-                  <div className="mt-1.5 flex items-center gap-1 text-[11px] text-text-tertiary">
-                    <Icon icon={LinkIcon} size={11} />
-                    <span className="max-w-[140px] truncate">
-                      {item.linkedArtifacts.length === 1
-                        ? item.linkedArtifacts[0].title
-                        : `${item.linkedArtifacts.length} specs`}
-                    </span>
-                  </div>
-                ) : (
-                  <div className="mt-1.5 text-[11px] text-text-tertiary">
-                    Unlinked
-                  </div>
-                )}
               </div>
             </button>
           ))}
@@ -651,31 +565,6 @@ export default function EvidencePage() {
                     ))}
                   </div>
                 )}
-
-                {/* Linked artifacts */}
-                {detailEvidence.linkedArtifacts &&
-                  detailEvidence.linkedArtifacts.length > 0 && (
-                    <div>
-                      <div className="text-[11px] font-medium uppercase tracking-caps text-text-tertiary">
-                        Linked Artifacts
-                      </div>
-                      <div className="mt-1.5 space-y-1">
-                        {detailEvidence.linkedArtifacts.map((a) => (
-                          <div
-                            key={a.id}
-                            className="flex items-center gap-1.5 text-sm text-text-secondary"
-                          >
-                            <Icon
-                              icon={LinkIcon}
-                              size={12}
-                              className="text-text-tertiary"
-                            />
-                            {a.title}
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
 
                 {/* Actions */}
                 <div className="flex gap-2 border-t border-border-default pt-4">

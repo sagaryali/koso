@@ -27,6 +27,12 @@ interface CriticalityResult {
   reason: string;
 }
 
+interface VerdictResult {
+  label: string;
+  verdict: "BUILD" | "MAYBE" | "SKIP";
+  reason: string;
+}
+
 function isDemoMode() {
   return (
     process.env.NEXT_PUBLIC_DEMO_MODE === "true" ||
@@ -128,6 +134,9 @@ export async function computeClusters(
           criticality_score: null as number | null,
           criticality_level: null as string | null,
           criticality_reason: null as string | null,
+          verdict: null as string | null,
+          verdict_reasoning: null as string | null,
+          verdict_at: null as string | null,
           computed_at: new Date().toISOString(),
         };
       })
@@ -174,9 +183,34 @@ export async function computeClusters(
       }
     }
 
-    // 6. Delete old clusters, insert new ones
+    // 6. Assess verdicts (BUILD / MAYBE / SKIP)
+    if (validClusters.length > 0 && !isDemoMode()) {
+      onProgress?.("Assessing build worthiness...");
+      const verdictResults = await computeVerdicts(
+        validClusters.map((c) => ({
+          label: c.label,
+          summary: c.summary,
+          evidenceCount: c.evidence_count,
+          criticalityLevel: c.criticality_level,
+        })),
+        evidence
+      );
+
+      const now = new Date().toISOString();
+      for (const cluster of validClusters) {
+        const match = verdictResults.find((r) => r.label === cluster.label);
+        if (match) {
+          cluster.verdict = match.verdict;
+          cluster.verdict_reasoning = match.reason;
+          cluster.verdict_at = now;
+        }
+      }
+    }
+
+    // 7. Delete old clusters, insert new ones
     onProgress?.("Saving themes...");
     const { error: deleteError } = await supabase
+
       .from("evidence_clusters")
       .delete()
       .eq("workspace_id", workspaceId);
@@ -195,7 +229,7 @@ export async function computeClusters(
       }
     }
 
-    // 7. Update log
+    // 8. Update log
     await updateLog(workspaceId, "completed", evidence.length);
   } catch (err) {
     console.error("[clusters] Computation failed:", err);
@@ -348,6 +382,66 @@ async function computeCriticality(
   try {
     const parsed = JSON.parse(raw);
     return (parsed.results ?? []) as CriticalityResult[];
+  } catch {
+    return [];
+  }
+}
+
+async function computeVerdicts(
+  clusters: {
+    label: string;
+    summary: string;
+    evidenceCount: number;
+    criticalityLevel: string | null;
+  }[],
+  evidence: { id: string; title: string; content: string }[]
+): Promise<VerdictResult[]> {
+  const anthropic = new Anthropic({
+    apiKey: process.env.ANTHROPIC_API_KEY,
+  });
+
+  const clusterDescriptions = clusters
+    .map(
+      (c) =>
+        `- "${c.label}": ${c.summary} (${c.evidenceCount} evidence items, criticality: ${c.criticalityLevel ?? "unknown"})`
+    )
+    .join("\n");
+
+  // Include a sample of evidence for grounding
+  const evidenceSample = evidence
+    .slice(0, 30)
+    .map((e) => `- ${e.title}: ${e.content.slice(0, 200)}`)
+    .join("\n");
+
+  const response = await anthropic.messages.create({
+    model: "claude-haiku-4-5-20251001",
+    max_tokens: 1024,
+    system: `You are a senior product strategist deciding which feature themes are worth building. For each theme, assign a verdict:
+- BUILD: Strong customer demand, clear business value, evidence supports this decisively.
+- MAYBE: Some signal but not enough evidence, or the value is unclear. Needs more validation.
+- SKIP: Weak signal, low impact, or not aligned with core product direction.
+
+Consider evidence volume, criticality, and whether the theme addresses a real customer pain point vs. a nice-to-have. Be decisive — default to MAYBE only when genuinely uncertain. Provide a one-sentence reason for each.
+
+Return JSON: {"results": [{"label": "...", "verdict": "BUILD", "reason": "..."}]}. No markdown, no code fences.`,
+    messages: [
+      {
+        role: "user",
+        content: `Themes:\n${clusterDescriptions}\n\nEvidence sample:\n${evidenceSample}`,
+      },
+    ],
+  });
+
+  let raw =
+    response.content[0].type === "text"
+      ? response.content[0].text.trim()
+      : '{"results":[]}';
+
+  raw = raw.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/g, "");
+
+  try {
+    const parsed = JSON.parse(raw);
+    return (parsed.results ?? []) as VerdictResult[];
   } catch {
     return [];
   }

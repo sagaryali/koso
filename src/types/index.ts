@@ -45,6 +45,7 @@ export interface Artifact {
   content: Record<string, unknown>;
   status: ArtifactStatus;
   parent_id: string | null;
+  source_cluster_ids: string[];
   created_at: string;
   updated_at: string;
 }
@@ -62,17 +63,6 @@ export interface Evidence {
   file_type: string | null;
   file_size: number | null;
   extracted_text: string | null;
-  created_at: string;
-}
-
-export interface Link {
-  id: string;
-  workspace_id: string;
-  source_id: string;
-  source_type: string;
-  target_id: string;
-  target_type: string;
-  relationship: string;
   created_at: string;
 }
 
@@ -174,6 +164,8 @@ export interface MarketResearchResponse {
 
 export type CriticalityLevel = 'critical' | 'high' | 'medium' | 'low';
 
+export type ClusterVerdict = 'BUILD' | 'MAYBE' | 'SKIP';
+
 export interface EvidenceCluster {
   id: string;
   workspace_id: string;
@@ -185,6 +177,13 @@ export interface EvidenceCluster {
   criticality_score: number | null;
   criticality_level: CriticalityLevel | null;
   criticality_reason: string | null;
+  verdict: ClusterVerdict | null;
+  verdict_reasoning: string | null;
+  verdict_at: string | null;
+  pm_note: string | null;
+  pinned: boolean;
+  dismissed: boolean;
+  custom_label: string | null;
   computed_at: string;
 }
 
@@ -198,4 +197,50 @@ export interface FeasibilityAssessment {
   };
   buildingBlocks: string[];
   risks: string[];
+}
+
+// Code Impact Report types
+
+export type EffortSize = "S" | "M" | "L" | "XL";
+
+export interface CodeImpactModule {
+  filePath: string;
+  moduleType: string;
+  changeType: "modify" | "create" | "schema" | "config";
+  changeDescription: string;
+  effort: EffortSize;
+}
+
+export interface CodeImpactPhase {
+  name: string;
+  description: string;
+  modules: string[];
+  effort: EffortSize;
+  dependencies: string[];
+}
+
+export interface CodeImpactThemeMapping {
+  clusterLabel: string;
+  clusterSummary: string;
+  evidenceCount: number;
+  criticalityLevel: string;
+  affectedModules: string[];
+  effort: EffortSize;
+  dropImpact: string;
+}
+
+export interface CodeImpactReport {
+  affectedModules: CodeImpactModule[];
+  newModules: CodeImpactModule[];
+  totalFileCount: number;
+  overallEffort: EffortSize;
+  effortReasoning: string;
+  effortBreakdown: { area: string; effort: EffortSize; reason: string }[];
+  reusableCode: { filePath: string; description: string }[];
+  netNewAreas: string[];
+  schemaChanges: { description: string; type: string }[];
+  apiChanges: { description: string; type: string }[];
+  risks: { description: string; severity: string; mitigation: string }[];
+  phases: CodeImpactPhase[];
+  themeMappings?: CodeImpactThemeMapping[];
 }

@@ -30,7 +30,6 @@ interface MarketResult {
 interface WorkspaceOverviewContext {
   clusters: { label: string; summary: string; count: number }[];
   allSpecs: { title: string; type: string; status: string }[];
-  unlinkedEvidence: { title: string; content: string }[];
   totalEvidenceCount: number;
 }
 
@@ -240,7 +239,7 @@ export function buildPrompt(
     userParts.push("--- Workspace Overview ---");
     userParts.push("");
     userParts.push(
-      `Total evidence: ${wo.totalEvidenceCount} items (${wo.unlinkedEvidence.length} unlinked to any spec)`
+      `Total evidence: ${wo.totalEvidenceCount} items`
     );
     userParts.push("");
 
@@ -256,18 +255,6 @@ export function buildPrompt(
       userParts.push("All Specifications:");
       for (const s of wo.allSpecs) {
         userParts.push(`- ${s.title} [${s.type}] — ${s.status}`);
-      }
-      userParts.push("");
-    }
-
-    if (wo.unlinkedEvidence.length > 0) {
-      const capped = wo.unlinkedEvidence.slice(0, 30);
-      userParts.push(
-        `Unlinked Evidence (${wo.unlinkedEvidence.length} items, showing up to 30):`
-      );
-      for (const e of capped) {
-        const snippet = e.content.slice(0, 200);
-        userParts.push(`- ${e.title}: ${snippet}`);
       }
       userParts.push("");
     }

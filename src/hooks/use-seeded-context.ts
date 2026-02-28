@@ -7,7 +7,6 @@ import type {
   ArtifactType,
   ArtifactStatus,
   CodebaseModuleType,
-  MarketSearchResult,
 } from "@/types";
 
 export interface SeededSpec {
@@ -29,7 +28,6 @@ export interface SeededContextData {
   evidence: Evidence[];
   specs: SeededSpec[];
   codeModules: SeededCodeModule[];
-  marketSignals: MarketSearchResult[];
   loading: boolean;
 }
 
@@ -37,7 +35,6 @@ const EMPTY_SEEDED: SeededContextData = {
   evidence: [],
   specs: [],
   codeModules: [],
-  marketSignals: [],
   loading: false,
 };
 
@@ -45,8 +42,7 @@ export function useSeededContext(
   workspaceId: string,
   currentArtifactId: string,
   isEmpty: boolean,
-  codebaseStatus: string | null,
-  productDescription: string | null
+  codebaseStatus: string | null
 ): SeededContextData {
   const [data, setData] = useState<SeededContextData>(EMPTY_SEEDED);
   const fetchedRef = useRef(false);
@@ -93,57 +89,17 @@ export function useSeededContext(
         codeQuery,
       ]);
 
-      // 4. Market signals (if product_description exists)
-      let marketSignals: MarketSearchResult[] = [];
-      if (productDescription) {
-        try {
-          let marketQuery = productDescription;
-
-          // If codebase is ready, enrich query with architecture summary
-          if (includeCode) {
-            const { data: archArtifacts } = await supabase
-              .from("artifacts")
-              .select("title")
-              .eq("workspace_id", workspaceId)
-              .eq("type", "architecture_summary")
-              .limit(1);
-
-            if (archArtifacts && archArtifacts.length > 0) {
-              marketQuery = `${productDescription} ${archArtifacts[0].title}`;
-            }
-          }
-
-          const marketRes = await fetch("/api/market/search", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              query: marketQuery,
-              workspaceId,
-              maxResults: 5,
-            }),
-          });
-
-          if (marketRes.ok) {
-            const marketData = await marketRes.json();
-            marketSignals = marketData.results || [];
-          }
-        } catch {
-          // Market search failure is non-fatal
-        }
-      }
-
       setData({
         evidence: (evidenceResult.data as Evidence[]) ?? [],
         specs: (specsResult.data as SeededSpec[]) ?? [],
         codeModules: (codeResult?.data as SeededCodeModule[]) ?? [],
-        marketSignals,
         loading: false,
       });
     } catch (err) {
       console.error("[seeded-context] Fetch error:", err);
       setData((prev) => ({ ...prev, loading: false }));
     }
-  }, [workspaceId, currentArtifactId, codebaseStatus, productDescription]);
+  }, [workspaceId, currentArtifactId, codebaseStatus]);
 
   // Initial fetch when isEmpty and data not yet loaded
   useEffect(() => {

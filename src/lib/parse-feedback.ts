@@ -5,11 +5,38 @@ export interface FeedbackItem {
   isSample?: boolean;
 }
 
+// Lines that are structural noise, not actual evidence content
+function isNoiseLine(line: string): boolean {
+  const trimmed = line.trim();
+  if (!trimmed) return false; // empty lines are handled by splitting logic
+  // Horizontal rules / separators: ---, ***, ___, ===, ~~~, etc.
+  if (/^[-*_=~]{3,}\s*$/.test(trimmed)) return true;
+  // Markdown headings that are just labels like "# Feedback" or "## ---"
+  if (/^#{1,6}\s*[-*_=~]{3,}\s*$/.test(trimmed)) return true;
+  // Standalone numbers (e.g. "1" "2" between items, not "1." which is a list)
+  if (/^\d+$/.test(trimmed)) return true;
+  // Common pasted artifacts: page numbers, timestamps with no content
+  if (/^page\s+\d+$/i.test(trimmed)) return true;
+  if (/^-{1,2}$/.test(trimmed)) return true;
+  return false;
+}
+
 export function parseFeedback(raw: string): FeedbackItem[] {
   const text = raw.replace(/\r\n/g, "\n").trim();
   if (!text) return [];
 
-  const lines = text.split("\n");
+  // Strip noise lines before any splitting logic.
+  // Noise lines act as separators (replaced with blank lines) so they
+  // naturally become split points without leaking into content.
+  const cleaned = text
+    .split("\n")
+    .map((line) => (isNoiseLine(line) ? "" : line))
+    .join("\n")
+    .trim();
+
+  if (!cleaned) return [];
+
+  const lines = cleaned.split("\n");
 
   // Check for numbered list pattern (1. or 1) style)
   const numberedPattern = /^\d+[\.\)]\s/;
@@ -33,7 +60,7 @@ export function parseFeedback(raw: string): FeedbackItem[] {
   }
 
   // Split on double newlines
-  const doubleNewlineSplit = text
+  const doubleNewlineSplit = cleaned
     .split(/\n\n+/)
     .map((chunk) => chunk.trim())
     .filter(Boolean);
@@ -69,7 +96,7 @@ export function parseFeedback(raw: string): FeedbackItem[] {
   }
 
   // Truly a single item
-  return [{ id: crypto.randomUUID(), content: text, title: "" }];
+  return [{ id: crypto.randomUUID(), content: cleaned, title: "" }];
 }
 
 /**
