@@ -15,6 +15,7 @@ import {
 import {
   Button,
   Badge,
+  ConfirmDialog,
   Dialog,
   Input,
   TextArea,
@@ -82,6 +83,7 @@ export default function EvidencePage() {
   const [editTitle, setEditTitle] = useState("");
   const [editContent, setEditContent] = useState("");
   const [editSource, setEditSource] = useState("");
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
 
   const searchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const supabase = createClient();
@@ -585,7 +587,7 @@ export default function EvidencePage() {
                     variant="ghost"
                     size="sm"
                     icon={Trash2}
-                    onClick={handleDelete}
+                    onClick={() => setDeleteConfirmOpen(true)}
                     className="text-state-error hover:bg-red-50"
                   >
                     Delete
@@ -596,6 +598,13 @@ export default function EvidencePage() {
           </div>
         )}
       </Dialog>
+      <ConfirmDialog
+        open={deleteConfirmOpen}
+        onClose={() => setDeleteConfirmOpen(false)}
+        onConfirm={handleDelete}
+        title="Delete evidence"
+        description={`Are you sure you want to delete "${detailEvidence?.title || "Untitled"}"? This cannot be undone.`}
+      />
     </div>
   );
 }

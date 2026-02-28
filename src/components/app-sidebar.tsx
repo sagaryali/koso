@@ -17,7 +17,7 @@ import {
   Trash2,
   Lightbulb,
 } from "lucide-react";
-import { Button, Icon, KosoMark } from "@/components/ui";
+import { Button, Icon, KosoMark, ConfirmDialog } from "@/components/ui";
 import { DropdownMenu } from "@/components/ui/dropdown-menu";
 import { NewSpecDialog } from "@/components/new-spec-dialog";
 import { EvidenceFlow } from "@/components/spec-creation/evidence-flow";
@@ -96,6 +96,7 @@ export function AppSidebar({
   const [newSpecOpen, setNewSpecOpen] = useState(false);
   const [evidenceCount, setEvidenceCount] = useState(0);
   const [evidenceFlowOpen, setEvidenceFlowOpen] = useState(false);
+  const [deleteSpecId, setDeleteSpecId] = useState<string | null>(null);
   const router = useRouter();
   const pathname = usePathname();
   const supabase = createClient();
@@ -310,7 +311,7 @@ export function AppSidebar({
                     <button
                       onClick={(e) => {
                         e.stopPropagation();
-                        handleDeleteSpec(spec.id);
+                        setDeleteSpecId(spec.id);
                       }}
                       className="flex h-6 w-6 shrink-0 cursor-pointer items-center justify-center opacity-0 transition-none group-hover:opacity-100 hover:text-state-error"
                       aria-label="Delete spec"
@@ -411,6 +412,15 @@ export function AppSidebar({
           />
         </>
       )}
+      <ConfirmDialog
+        open={deleteSpecId !== null}
+        onClose={() => setDeleteSpecId(null)}
+        onConfirm={() => {
+          if (deleteSpecId) handleDeleteSpec(deleteSpecId);
+        }}
+        title="Delete spec"
+        description={`Are you sure you want to delete "${specs.find((s) => s.id === deleteSpecId)?.title || "Untitled"}"? This cannot be undone.`}
+      />
     </aside>
   );
 }

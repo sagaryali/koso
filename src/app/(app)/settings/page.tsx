@@ -10,7 +10,7 @@ import {
   ChevronRight,
   AlertCircle,
 } from "lucide-react";
-import { Button, Input, TextArea, Icon, Skeleton } from "@/components/ui";
+import { Button, ConfirmDialog, Input, TextArea, Icon, Skeleton } from "@/components/ui";
 import { toast } from "@/components/ui/toast";
 import { RepoPicker } from "@/components/codebase/repo-picker";
 import { DeleteWorkspaceDialog } from "@/components/delete-workspace-dialog";
@@ -36,6 +36,10 @@ export default function SettingsPage() {
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [customTemplates, setCustomTemplates] = useState<CustomTemplate[]>([]);
   const [templatesLoading, setTemplatesLoading] = useState(false);
+  const [deleteTemplateId, setDeleteTemplateId] = useState<string | null>(null);
+  const [disconnectConfirm, setDisconnectConfirm] = useState<
+    { type: "github" } | { type: "repo"; connId: string } | null
+  >(null);
   const supabase = createClient();
 
   const { connection, connections, githubUsername, refresh: refreshStatus } =
@@ -417,7 +421,7 @@ export default function SettingsPage() {
                   )}
                 </div>
                 <button
-                  onClick={() => deleteTemplate(tmpl.id)}
+                  onClick={() => setDeleteTemplateId(tmpl.id)}
                   className="cursor-pointer text-text-tertiary hover:text-text-primary"
                 >
                   <Icon icon={Trash2} />
@@ -466,7 +470,7 @@ export default function SettingsPage() {
                 <Button
                   variant="ghost"
                   size="sm"
-                  onClick={handleDisconnectGitHub}
+                  onClick={() => setDisconnectConfirm({ type: "github" })}
                   disabled={disconnecting}
                 >
                   Disconnect GitHub
@@ -566,7 +570,7 @@ export default function SettingsPage() {
                       <Button
                         variant="ghost"
                         size="sm"
-                        onClick={() => handleDisconnect(conn.id)}
+                        onClick={() => setDisconnectConfirm({ type: "repo", connId: conn.id })}
                         disabled={disconnecting}
                       >
                         Disconnect
@@ -588,7 +592,7 @@ export default function SettingsPage() {
                 <Button
                   variant="ghost"
                   size="sm"
-                  onClick={handleDisconnectGitHub}
+                  onClick={() => setDisconnectConfirm({ type: "github" })}
                   disabled={disconnecting}
                 >
                   Disconnect GitHub
@@ -650,6 +654,36 @@ export default function SettingsPage() {
           allWorkspaces={allWorkspaces}
         />
       )}
+
+      <ConfirmDialog
+        open={deleteTemplateId !== null}
+        onClose={() => setDeleteTemplateId(null)}
+        onConfirm={() => {
+          if (deleteTemplateId) deleteTemplate(deleteTemplateId);
+        }}
+        title="Delete template"
+        description={`Are you sure you want to delete "${customTemplates.find((t) => t.id === deleteTemplateId)?.label || "Untitled"}"? This cannot be undone.`}
+      />
+
+      <ConfirmDialog
+        open={disconnectConfirm !== null}
+        onClose={() => setDisconnectConfirm(null)}
+        onConfirm={() => {
+          if (!disconnectConfirm) return;
+          if (disconnectConfirm.type === "github") {
+            handleDisconnectGitHub();
+          } else {
+            handleDisconnect(disconnectConfirm.connId);
+          }
+        }}
+        title={disconnectConfirm?.type === "github" ? "Disconnect GitHub" : "Disconnect repository"}
+        description={
+          disconnectConfirm?.type === "github"
+            ? "This will remove your GitHub connection and delete all indexed codebase data including modules and embeddings. This cannot be undone."
+            : "This will disconnect the repository and delete its indexed codebase data including modules and embeddings. This cannot be undone."
+        }
+        confirmLabel="Disconnect"
+      />
     </div>
   );
 }

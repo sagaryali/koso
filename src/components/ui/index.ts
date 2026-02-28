@@ -4,6 +4,7 @@ export { Input } from "./input";
 export { TextArea } from "./textarea";
 export { Badge } from "./badge";
 export { Card } from "./card";
+export { ConfirmDialog } from "./confirm-dialog";
 export { Dialog } from "./dialog";
 export { DropdownMenu } from "./dropdown-menu";
 export { Tooltip } from "./tooltip";
