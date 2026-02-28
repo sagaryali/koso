@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useRef, useCallback, useEffect } from "react";
+import { computeContentHash } from "@/lib/utils";
 import type { CodeImpactReport } from "@/types";
 
 interface CodeImpactState {
@@ -10,14 +11,6 @@ interface CodeImpactState {
   error: string | null;
   sourceType: "manual" | "evidence_flow";
   isStale: boolean;
-}
-
-function computeContentHash(text: string): number {
-  let hash = 0;
-  for (let i = 0; i < text.length; i++) {
-    hash = ((hash << 5) - hash + text.charCodeAt(i)) | 0;
-  }
-  return hash;
 }
 
 export function useCodeImpact(
@@ -41,6 +34,7 @@ export function useCodeImpact(
 
   const abortRef = useRef<AbortController | null>(null);
   const fetchedRef = useRef(false);
+  const generatedHashRef = useRef<number | null>(null);
 
   // Fetch stored report on mount
   useEffect(() => {
@@ -59,6 +53,7 @@ export function useCodeImpact(
         if (cancelled) return;
 
         if (data.report) {
+          generatedHashRef.current = computeContentHash(specContent);
           setState((prev) => ({
             ...prev,
             report: data.report,
@@ -81,15 +76,17 @@ export function useCodeImpact(
     return () => {
       cancelled = true;
     };
-  }, [artifactId]);
+  }, [artifactId]); // eslint-disable-line react-hooks/exhaustive-deps — specContent read from closure at mount; staleness useEffect handles changes
 
   // Update staleness when spec content changes
   useEffect(() => {
-    if (!state.report || !specContent) return;
-    // We rely on the server's staleness check from the initial fetch.
-    // For subsequent edits, compute locally: if the content hash changed since
-    // we last generated, mark stale.
-  }, [specContent, state.report]);
+    if (!state.report || !specContent || generatedHashRef.current === null) return;
+    const currentHash = computeContentHash(specContent);
+    const stale = currentHash !== generatedHashRef.current;
+    if (stale !== state.isStale) {
+      setState((prev) => ({ ...prev, isStale: stale }));
+    }
+  }, [specContent, state.report, state.isStale]);
 
   const generate = useCallback(
     async (isRegenerate = false) => {
@@ -185,6 +182,7 @@ export function useCodeImpact(
               .replace(/\n?```$/, "");
           }
           const report: CodeImpactReport = JSON.parse(jsonStr);
+          generatedHashRef.current = computeContentHash(specContent);
           setState((prev) => ({
             ...prev,
             report,
@@ -213,6 +211,14 @@ export function useCodeImpact(
   const generateReport = useCallback(() => generate(false), [generate]);
   const regenerateReport = useCallback(() => generate(true), [generate]);
 
+  const abort = useCallback(() => {
+    if (abortRef.current) {
+      abortRef.current.abort();
+      abortRef.current = null;
+    }
+    setState((prev) => ({ ...prev, streaming: false }));
+  }, []);
+
   // Cleanup on unmount
   useEffect(() => {
     return () => {
@@ -224,10 +230,12 @@ export function useCodeImpact(
     report: state.report,
     loading: state.loading,
     streaming: state.streaming,
+    error: state.error,
     sourceType: state.sourceType,
     isStale: state.isStale,
     hasReport: state.report !== null,
     generateReport,
     regenerateReport,
+    abort,
   };
 }

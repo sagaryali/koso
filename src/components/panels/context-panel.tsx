@@ -2,8 +2,8 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Code, Quote } from "lucide-react";
-import { Badge, Dialog, Skeleton, Icon } from "@/components/ui";
+import { Code, Layers, Quote } from "lucide-react";
+import { Badge, Button, Dialog, Skeleton, Icon } from "@/components/ui";
 import { cn } from "@/lib/utils";
 import type { ContextSearchResult, Evidence, FeasibilityAssessment } from "@/types";
 import type { SeededSpec, SeededCodeModule, SeededContextData } from "@/hooks/use-seeded-context";
@@ -29,6 +29,9 @@ interface ContextPanelProps {
   feasibilityAssessment?: FeasibilityAssessment | null;
   feasibilityLoading?: boolean;
   sourceClusterIds?: string[];
+  onCodeImpactClick?: () => void;
+  codeImpactHasReport?: boolean;
+  codeImpactIsStale?: boolean;
 }
 
 function SectionLabel({ children }: { children: React.ReactNode }) {
@@ -433,6 +436,9 @@ export function ContextPanel({
   feasibilityAssessment,
   feasibilityLoading,
   sourceClusterIds,
+  onCodeImpactClick,
+  codeImpactHasReport,
+  codeImpactIsStale,
 }: ContextPanelProps) {
   // Review mode: spec was AI-drafted from evidence clusters
   const isReviewMode = (sourceClusterIds?.length ?? 0) > 0;
@@ -748,6 +754,25 @@ export function ContextPanel({
           <Icon icon={Code} size={12} className="text-text-tertiary" />
         )}
       </div>
+
+      {/* Code Impact button */}
+      {hasCodebase && onCodeImpactClick && (
+        <Button
+          variant="secondary"
+          size="sm"
+          icon={Layers}
+          onClick={onCodeImpactClick}
+          className="w-full justify-center"
+        >
+          Code Impact
+          {codeImpactHasReport && !codeImpactIsStale && (
+            <span className="ml-1.5 inline-block h-1.5 w-1.5 rounded-full bg-green-500" />
+          )}
+          {codeImpactIsStale && (
+            <span className="ml-1.5 inline-block h-1.5 w-1.5 rounded-full bg-yellow-500" />
+          )}
+        </Button>
+      )}
 
       {/* Section guidance hint */}
       {guidanceText && (

@@ -1,17 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getAuthenticatedWorkspace } from "@/lib/api/get-workspace";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { computeContentHash } from "@/lib/utils";
 import type { CodeImpactReport } from "@/types";
-
-function computeContentHash(content: string): number {
-  let hash = 0;
-  for (let i = 0; i < content.length; i++) {
-    const char = content.charCodeAt(i);
-    hash = (hash << 5) - hash + char;
-    hash |= 0;
-  }
-  return hash;
-}
 
 function extractTextContent(content: Record<string, unknown>): string {
   // Extract plain text from TipTap JSON document for hashing

@@ -8,7 +8,6 @@ import {
   PanelRightOpen,
   Sparkles,
   Trash2,
-  Layers,
 } from "lucide-react";
 import {
   Button,
@@ -25,7 +24,7 @@ import { TiptapEditor } from "@/components/editor/tiptap-editor";
 import { SpecGenerationOverlay } from "@/components/editor/spec-generation-overlay";
 import { sectionsToTiptapDoc } from "@/lib/sections-to-tiptap";
 import { ContextPanel } from "@/components/panels/context-panel";
-import { CodeImpactReportDialog } from "@/components/panels/code-impact-report-dialog";
+import { CodeImpactPanel } from "@/components/panels/code-impact-panel";
 import { AddEvidenceDialog } from "@/components/evidence/add-evidence-dialog";
 import { SaveAsTemplateDialog } from "@/components/save-as-template-dialog";
 import { useContextPanel } from "@/hooks/use-context-panel";
@@ -97,7 +96,7 @@ export default function EditorPage() {
   const [evidenceDialogOpen, setEvidenceDialogOpen] = useState(false);
   const [evidencePrefill, setEvidencePrefill] = useState("");
   const [templateDialogOpen, setTemplateDialogOpen] = useState(false);
-  const [codeImpactOpen, setCodeImpactOpen] = useState(false);
+  const [codeImpactPanelOpen, setCodeImpactPanelOpen] = useState(false);
   const [saveStatus, setSaveStatus] = useState<"saving" | "saved" | "idle">(
     "idle"
   );
@@ -135,11 +134,13 @@ export default function EditorPage() {
     report: codeImpactReport,
     loading: codeImpactLoading,
     streaming: codeImpactStreaming,
+    error: codeImpactError,
     sourceType: codeImpactSourceType,
     isStale: codeImpactIsStale,
     hasReport: codeImpactHasReport,
     generateReport: codeImpactGenerate,
     regenerateReport: codeImpactRegenerate,
+    abort: codeImpactAbort,
   } = useCodeImpact(
     artifact?.workspace_id ?? "",
     id,
@@ -625,21 +626,6 @@ export default function EditorPage() {
             >
               <span className="text-xs opacity-70">&#8984;K</span>
             </Button>
-            <Button
-              variant="secondary"
-              size="sm"
-              icon={Layers}
-              onClick={() => setCodeImpactOpen(true)}
-              disabled={!hasCodebase}
-            >
-              Code Impact
-              {codeImpactHasReport && !codeImpactIsStale && (
-                <span className="ml-1.5 inline-block h-1.5 w-1.5 rounded-full bg-green-500" />
-              )}
-              {codeImpactIsStale && (
-                <span className="ml-1.5 inline-block h-1.5 w-1.5 rounded-full bg-yellow-500" />
-              )}
-            </Button>
             <div className="flex-1" />
             <Button
               variant="ghost"
@@ -724,7 +710,6 @@ export default function EditorPage() {
       {/* Context Panel */}
       <div data-tour="editor-panel">
       <ResizablePanel width={320} collapsed={!panelOpen}>
-        <div className="h-full overflow-y-auto">
           <ContextPanel
             relatedSpecs={contextResults.relatedSpecs}
             customerEvidence={contextResults.customerEvidence}
@@ -744,10 +729,29 @@ export default function EditorPage() {
             feasibilityAssessment={feasibilityAssessment}
             feasibilityLoading={feasibilityLoading}
             sourceClusterIds={artifact.source_cluster_ids}
+            onCodeImpactClick={() => setCodeImpactPanelOpen(true)}
+            codeImpactHasReport={codeImpactHasReport}
+            codeImpactIsStale={codeImpactIsStale}
           />
-        </div>
       </ResizablePanel>
       </div>
+
+      {/* Code Impact Slide-Over Panel */}
+      <ResizablePanel width={560} minWidth={400} maxWidth={800} collapsed={!codeImpactPanelOpen}>
+        <CodeImpactPanel
+          report={codeImpactReport}
+          loading={codeImpactLoading}
+          streaming={codeImpactStreaming}
+          error={codeImpactError}
+          sourceType={codeImpactSourceType}
+          isStale={codeImpactIsStale}
+          hasReport={codeImpactHasReport}
+          onGenerate={codeImpactGenerate}
+          onRegenerate={codeImpactRegenerate}
+          onCancel={codeImpactAbort}
+          onClose={() => setCodeImpactPanelOpen(false)}
+        />
+      </ResizablePanel>
 
       {/* Command Palette */}
       <CommandPalette
@@ -783,20 +787,6 @@ export default function EditorPage() {
           defaultLabel={title || artifact.title}
         />
       )}
-
-      {/* Code Impact Report */}
-      <CodeImpactReportDialog
-        open={codeImpactOpen}
-        onClose={() => setCodeImpactOpen(false)}
-        report={codeImpactReport}
-        loading={codeImpactLoading}
-        streaming={codeImpactStreaming}
-        sourceType={codeImpactSourceType}
-        isStale={codeImpactIsStale}
-        hasReport={codeImpactHasReport}
-        onGenerate={codeImpactGenerate}
-        onRegenerate={codeImpactRegenerate}
-      />
 
       {/* Delete Confirmation */}
       <Dialog open={deleteDialogOpen} onClose={() => setDeleteDialogOpen(false)}>

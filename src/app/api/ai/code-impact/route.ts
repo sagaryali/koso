@@ -3,21 +3,12 @@ import Anthropic from "@anthropic-ai/sdk";
 import { getAuthenticatedWorkspace } from "@/lib/api/get-workspace";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { similaritySearch } from "@/lib/embeddings/retrieve";
+import { computeContentHash } from "@/lib/utils";
 import type { CodeImpactReport } from "@/types";
 
 const anthropic = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY,
 });
-
-function computeContentHash(content: string): number {
-  let hash = 0;
-  for (let i = 0; i < content.length; i++) {
-    const char = content.charCodeAt(i);
-    hash = (hash << 5) - hash + char;
-    hash |= 0; // Convert to 32-bit integer
-  }
-  return hash;
-}
 
 export async function POST(request: NextRequest) {
   try {
@@ -202,7 +193,7 @@ export async function POST(request: NextRequest) {
 
           const stream = anthropic.messages.stream({
             model: "claude-sonnet-4-20250514",
-            max_tokens: 4096,
+            max_tokens: 8192,
             system: systemPrompt,
             messages: [{ role: "user", content: userParts.join("\n") }],
           });
